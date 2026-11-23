@@ -155,7 +155,9 @@ void RenderQueue::draw()
 		commandIndex++;
 
 		RenderStatistics::gatherStatistics(*opaqueRenderCommand);
+#ifndef WITH_RHI // the camera matrices are part of the loose uniforms uploaded by `issue()`
 		opaqueRenderCommand->commitCameraTransformation();
+#endif
 		opaqueRenderCommand->issue();
 	}
 
@@ -188,8 +190,8 @@ void RenderQueue::draw()
 		RenderStatistics::gatherStatistics(*transparentRenderCommand);
 #ifndef WITH_RHI
 		GLBlending::setBlendFunc(transparentRenderCommand->material().srcBlendingFactor(), transparentRenderCommand->material().destBlendingFactor());
-#endif
 		transparentRenderCommand->commitCameraTransformation();
+#endif
 		transparentRenderCommand->issue();
 	}
 #ifdef WITH_RHI

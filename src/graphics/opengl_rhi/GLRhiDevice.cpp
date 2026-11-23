@@ -3,6 +3,7 @@
 #include "GLBufferObject.h"
 #include "GLTexture.h"
 #include "GLShaderProgram.h"
+#include "GLUniformCache.h"
 #include "GLBlending.h"
 #include "GLDepthTest.h"
 #include "GLCullFace.h"
@@ -233,6 +234,42 @@ const nctl::Array<igfx::AttributeInfo> &GLShaderProgram::attributes() const
 	return rhiAttributes_;
 }
 
+void GLShaderProgram::invalidateReflection()
+{
+	reflectionBuilt_ = false;
+	rhiUniforms_.clear();
+	rhiUniformBlocks_.clear();
+	rhiAttributes_.clear();
+	rhiUniformShadow_.reset(nullptr);
+	rhiUniformShadowValid_ = 0;
+}
+
+void GLShaderProgram::commitLooseUniforms(const uint8_t *data, uint32_t writeMask)
+{
+	if (status_ != Status::LINKED_WITH_INTROSPECTION || uniforms_.isEmpty())
+		return;
+	if (rhiUniformShadow_ == nullptr)
+		rhiUniformShadow_ = nctl::makeUnique<uint8_t[]>(uniformsSize_);
+
+	unsigned int offset = 0;
+	for (unsigned int i = 0; i < uniforms_.size(); i++)
+	{
+		const GLUniform &uniform = uniforms_[i];
+		const unsigned int size = uniform.memorySize();
+		const bool shadowValid = (rhiUniformShadowValid_ >> i) & 1u;
+		if (((writeMask >> i) & 1u) && (shadowValid == false || memcmp(rhiUniformShadow_.get() + offset, data + offset, size) != 0))
+		{
+			GLUniformCache uniformCache(&uniform);
+			uniformCache.setDataPointer(const_cast<uint8_t *>(data + offset));
+			uniformCache.setDirty(true);
+			uniformCache.commitValue();
+			memcpy(rhiUniformShadow_.get() + offset, data + offset, size);
+			rhiUniformShadowValid_ |= (1u << i);
+		}
+		offset += size;
+	}
+}
+
 /*! Loose uniform offsets follow the packed host layout of `GLShaderUniforms`. Block bindings equal the block
  *  index, as `GLRhiCommandList::bindPipeline()` assigns them. Sampler bindings are not reflected on OpenGL:
  *  samplers read the texture unit stored in their uniform. */
@@ -399,6 +436,11 @@ void GLRhiCommandList::bindTexture(int binding, const igfx::ITexture *texture)
 		static_cast<const GLTexture *>(texture)->bind(unit);
 	else
 		GLTexture::unbind(unit);
+}
+
+void GLRhiCommandList::setLooseUniforms(const void *data, uint32_t writeMask)
+{
+	static_cast<GLShaderProgram &>(*pipeline_->program).commitLooseUniforms(static_cast<const uint8_t *>(data), writeMask);
 }
 
 void GLRhiCommandList::draw(unsigned int vertexCount, unsigned int instanceCount, unsigned int firstVertex)

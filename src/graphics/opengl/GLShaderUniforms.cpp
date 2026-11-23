@@ -86,6 +86,28 @@ GLUniformCache *GLShaderUniforms::uniform(const char *name)
 	return const_cast<GLUniformCache *>(static_cast<const GLShaderUniforms &>(*this).uniform(name));
 }
 
+#ifdef WITH_RHI
+void GLShaderUniforms::setUniformsDataPointer(GLubyte *dataPointer, const nctl::Array<igfx::UniformInfo> &layout)
+{
+	ASSERT(dataPointer);
+
+	if (shaderProgram_->status() != GLShaderProgram::Status::LINKED_WITH_INTROSPECTION)
+		return;
+
+	for (GLUniformCache &uniformCache : uniformCaches_)
+	{
+		for (const igfx::UniformInfo &info : layout)
+		{
+			if (info.blockIndex == -1 && strcmp(info.name.data(), uniformCache.uniform()->name()) == 0)
+			{
+				uniformCache.setDataPointer(dataPointer + info.offset);
+				break;
+			}
+		}
+	}
+}
+#endif
+
 void GLShaderUniforms::commitUniforms()
 {
 	if (shaderProgram_)

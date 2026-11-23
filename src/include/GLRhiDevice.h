@@ -44,6 +44,7 @@ class GLRhiCommandList : public igfx::ICommandList
 	void bindIndexBuffer(igfx::IBuffer &buffer, unsigned long offset, igfx::IndexType type) override;
 	void bindUniformBuffer(int binding, igfx::IBuffer &buffer, unsigned long offset, unsigned long size) override;
 	void bindTexture(int binding, const igfx::ITexture *texture) override;
+	void setLooseUniforms(const void *data, uint32_t writeMask) override;
 
 	void draw(unsigned int vertexCount, unsigned int instanceCount, unsigned int firstVertex) override;
 	void drawIndexed(unsigned int indexCount, unsigned int instanceCount, unsigned int firstIndex, int vertexOffset) override;

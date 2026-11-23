@@ -150,10 +150,21 @@ class Material
 	unsigned int uniformsHostBufferSize_;
 	/// Memory buffer with uniform values to be sent to the GPU
 	nctl::UniquePtr<GLubyte[]> uniformsHostBuffer_;
+#ifdef WITH_RHI
+	GLubyte *looseUniformsData_ = nullptr;
+	int projectionMatrixOffset_ = -1;
+	int viewMatrixOffset_ = -1;
+	/// Loose uniform bits of the camera matrices, always written as every program shares them
+	uint32_t cameraUniformsMask_ = 0;
+#endif
 
 	void bind();
 #ifdef WITH_RHI
 	void bind(igfx::ICommandList &commandList);
+	/// Writes the camera matrices into the loose uniforms and uploads them
+	void commitLooseUniforms(igfx::ICommandList &commandList);
+	/// Points the loose uniform caches at the offsets the reflection reports
+	void setLooseUniformsData(GLubyte *dataPointer);
 #endif
 	/// Wrapper around `GLShaderUniforms::commitUniforms()`
 	inline void commitUniforms() { shaderUniforms_.commitUniforms(); }

@@ -53,6 +53,7 @@ class IShaderProgram
 	virtual Status linkStatus() const = 0;
 	virtual const nctl::String &infoLog() const = 0;
 
+	/// Loose uniforms come first, in the order `ICommandList::setLooseUniforms()` masks refer to
 	virtual const nctl::Array<UniformInfo> &uniforms() const = 0;
 	virtual const nctl::Array<UniformBlockInfo> &uniformBlocks() const = 0;
 	virtual const nctl::Array<AttributeInfo> &attributes() const = 0;

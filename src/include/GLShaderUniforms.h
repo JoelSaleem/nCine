@@ -4,6 +4,10 @@
 #include <nctl/StaticHashMap.h>
 #include <nctl/String.h>
 #include "GLUniformCache.h"
+#ifdef WITH_RHI
+	#include "igfx/Types.h"
+	#include <nctl/Array.h>
+#endif
 
 namespace ncine {
 
@@ -22,6 +26,10 @@ class GLShaderUniforms
 	inline void setProgram(GLShaderProgram *shaderProgram) { setProgram(shaderProgram, nullptr, nullptr); }
 	void setProgram(GLShaderProgram *shaderProgram, const char *includeOnly, const char *exclude);
 	void setUniformsDataPointer(GLubyte *dataPointer);
+#ifdef WITH_RHI
+	/// Places every cache at the offset the reflection reports, so the buffer can be uploaded as a whole
+	void setUniformsDataPointer(GLubyte *dataPointer, const nctl::Array<igfx::UniformInfo> &layout);
+#endif
 	void setDirty(bool isDirty);
 
 	inline unsigned int numUniforms() const { return uniformCaches_.size(); }
@@ -34,6 +42,9 @@ class GLShaderUniforms
   private:
 	GLShaderProgram *shaderProgram_;
 	UniformHashMapType uniformCaches_;
+#ifdef WITH_RHI
+	friend class Material; // collects the dirty caches into a write mask
+#endif
 
 	/// Imports the uniforms with the option of including only some or excluding others
 	void importUniforms(const char *includeOnly, const char *exclude);

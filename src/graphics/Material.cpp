@@ -1,5 +1,6 @@
 #include <cstddef> // for offsetof()
 #include "Material.h"
+#include <nctl/StaticHashMapIterator.h>
 #include "RenderResources.h"
 #include "GLShaderProgram.h"
 #include "GLUniform.h"
@@ -106,7 +107,11 @@ void Material::reserveUniformsDataMemory()
 		uniformsHostBufferSize_ = uniformsSize;
 	}
 	GLubyte *dataPointer = uniformsHostBuffer_.get();
+#ifdef WITH_RHI
+	setLooseUniformsData(dataPointer);
+#else
 	shaderUniforms_.setUniformsDataPointer(dataPointer);
+#endif
 	shaderUniformBlocks_.setUniformsDataPointer(&dataPointer[shaderProgram_->uniformsSize()]);
 }
 
@@ -117,7 +122,11 @@ void Material::setUniformsDataPointer(GLubyte *dataPointer)
 
 	uniformsHostBuffer_.reset(nullptr);
 	uniformsHostBufferSize_ = 0;
+#ifdef WITH_RHI
+	setLooseUniformsData(dataPointer);
+#else
 	shaderUniforms_.setUniformsDataPointer(dataPointer);
+#endif
 	shaderUniformBlocks_.setUniformsDataPointer(&dataPointer[shaderProgram_->uniformsSize()]);
 }
 
@@ -174,6 +183,64 @@ void Material::bind(igfx::ICommandList &commandList)
 
 	if (shaderProgram_)
 		shaderUniformBlocks_.bind(commandList);
+}
+
+void Material::commitLooseUniforms(igfx::ICommandList &commandList)
+{
+	if (looseUniformsData_ == nullptr)
+		return;
+
+	// Like GL uniforms, values only change when written: several materials can share a program
+	// and rely on a value one of them set (e.g. every ImGui command after the first)
+	uint32_t writeMask = cameraUniformsMask_;
+	const nctl::Array<igfx::UniformInfo> &layout = shaderProgram_->uniforms();
+	for (GLUniformCache &uniformCache : shaderUniforms_.uniformCaches_)
+	{
+		if (uniformCache.isDirty() == false)
+			continue;
+		const int offset = static_cast<int>(uniformCache.dataPointer() - looseUniformsData_);
+		for (unsigned int i = 0; i < layout.size() && layout[i].blockIndex == -1; i++)
+		{
+			if (layout[i].offset == offset)
+			{
+				writeMask |= (1u << i);
+				break;
+			}
+		}
+		uniformCache.setDirty(false);
+	}
+
+	// `RenderResources` keeps the shared camera matrices, projection then view
+	const unsigned char *cameraUniforms = RenderResources::cameraUniformsBuffer();
+	if (projectionMatrixOffset_ >= 0)
+		memcpy(looseUniformsData_ + projectionMatrixOffset_, cameraUniforms, 64);
+	if (viewMatrixOffset_ >= 0)
+		memcpy(looseUniformsData_ + viewMatrixOffset_, cameraUniforms + 64, 64);
+	commandList.setLooseUniforms(looseUniformsData_, writeMask);
+}
+
+void Material::setLooseUniformsData(GLubyte *dataPointer)
+{
+	const nctl::Array<igfx::UniformInfo> &layout = shaderProgram_->uniforms();
+	shaderUniforms_.setUniformsDataPointer(dataPointer, layout);
+	looseUniformsData_ = dataPointer;
+
+	projectionMatrixOffset_ = -1;
+	viewMatrixOffset_ = -1;
+	cameraUniformsMask_ = 0;
+	for (unsigned int i = 0; i < layout.size() && layout[i].blockIndex == -1; i++)
+	{
+		if (layout[i].name == ProjectionMatrixUniformName)
+		{
+			projectionMatrixOffset_ = layout[i].offset;
+			cameraUniformsMask_ |= (1u << i);
+		}
+		else if (layout[i].name == ViewMatrixUniformName)
+		{
+			viewMatrixOffset_ = layout[i].offset;
+			cameraUniformsMask_ |= (1u << i);
+		}
+	}
 }
 #endif
 

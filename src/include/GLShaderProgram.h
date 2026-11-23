@@ -118,12 +118,18 @@ class GLShaderProgram
 	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override;
 	const nctl::Array<igfx::AttributeInfo> &attributes() const override;
 	int looseUniformsSize() const override { return static_cast<int>(uniformsSize_); }
+	/// Uploads the masked loose uniforms, skipping values equal to the ones last uploaded to this program
+	void commitLooseUniforms(const uint8_t *data, uint32_t writeMask);
 #endif
 
   private:
 #ifdef WITH_RHI
 	/// Reflection is built from the introspection data on first request
 	void buildReflection() const;
+	void invalidateReflection();
+	/// Copy of the loose uniform values last uploaded, one valid bit per uniform (at most `MaxNumUniforms`)
+	nctl::UniquePtr<uint8_t[]> rhiUniformShadow_;
+	uint32_t rhiUniformShadowValid_ = 0;
 	mutable bool reflectionBuilt_ = false;
 	mutable nctl::String rhiInfoLog_;
 	mutable nctl::Array<igfx::UniformInfo> rhiUniforms_ = nctl::Array<igfx::UniformInfo>(MaxNumUniforms);

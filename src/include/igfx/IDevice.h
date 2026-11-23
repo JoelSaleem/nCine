@@ -38,6 +38,10 @@ class ICommandList
 	virtual void bindIndexBuffer(IBuffer &buffer, unsigned long offset, IndexType type) = 0;
 	/// `binding` is the one reported by `UniformBlockInfo`, `offset` honours `Limits::uniformBufferOffsetAlignment`
 	virtual void bindUniformBuffer(int binding, IBuffer &buffer, unsigned long offset, unsigned long size) = 0;
+	/// Sets loose (non-block) uniforms of the bound pipeline's program, with OpenGL semantics: values persist
+	/// in the program, and only the uniforms whose bit is set in `writeMask` (bit `i` is the `i`-th loose
+	/// uniform of the reflection) take their new value from `data`, laid out at the reflected offsets
+	virtual void setLooseUniforms(const void *data, uint32_t writeMask) = 0;
 	/// `binding` is the texture unit (OpenGL) or the sampler's reflected binding (Vulkan), `nullptr` unbinds it
 	virtual void bindTexture(int binding, const ITexture *texture) = 0;
 

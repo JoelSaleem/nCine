@@ -324,6 +324,9 @@ void GLShaderProgram::reset(QueryPhase queryPhase)
 		uniforms_.clear();
 		uniformBlocks_.clear();
 		attributes_.clear();
+#ifdef WITH_RHI
+		invalidateReflection();
+#endif
 
 		attributeLocations_.clear();
 		vertexFormat_.reset();
@@ -467,6 +470,9 @@ bool GLShaderProgram::checkLinking()
 
 void GLShaderProgram::performIntrospection()
 {
+#ifdef WITH_RHI
+	invalidateReflection();
+#endif
 	if (introspection_ != Introspection::DISABLED && status_ != Status::LINKED_WITH_INTROSPECTION)
 	{
 		const GLUniformBlock::DiscoverUniforms discover = (introspection_ == Introspection::NO_UNIFORMS_IN_BLOCKS)

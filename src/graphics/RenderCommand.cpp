@@ -65,8 +65,7 @@ void RenderCommand::issue()
 	igfx::ICommandList &commandList = RenderResources::rhiCommandList();
 	commandList.bindPipeline(RenderResources::rhiPipeline(pipelineDesc));
 	material_.bind(commandList);
-	// ponytail: loose uniforms still go through the GL uniform caches, Vulkan needs them in a uniform buffer (Task 1.4)
-	material_.commitUniforms();
+	material_.commitLooseUniforms(commandList);
 
 	const Recti previousScissor = commandList.scissor();
 	const bool hasScissor = (scissorRect_.w > 0 && scissorRect_.h > 0);
