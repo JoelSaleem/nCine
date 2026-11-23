@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GOLDENS=goldens
-FRAME="${NCINE_CAPTURE_FRAME:-8}"
+FRAME="${NCINE_CAPTURE_FRAME:-30}" # 0.5 s of virtual time: animations and emitters have progressed
 TOL_VK="${GOLDEN_TOLERANCE_VK:-2}"
 MAXFRAC="${GOLDEN_MAX_FRAC:-0.005}"
 PCT="${PERF_THRESHOLD_PCT:-10}"
