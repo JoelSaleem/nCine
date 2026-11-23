@@ -1,0 +1,77 @@
+{
+ "apptest_anchor": {
+  "frame_ms_avg": 1.3432
+ },
+ "apptest_animsprites": {
+  "frame_ms_avg": 0.7058
+ },
+ "apptest_audio": {
+  "frame_ms_avg": 1.4053
+ },
+ "apptest_bunnymark": {
+  "frame_ms_avg": 3.1012
+ },
+ "apptest_camera": {
+  "frame_ms_avg": 0.9072
+ },
+ "apptest_clones": {
+  "frame_ms_avg": 1.2893
+ },
+ "apptest_filebrowser": {
+  "frame_ms_avg": 1.6403
+ },
+ "apptest_font": {
+  "frame_ms_avg": 0.8951
+ },
+ "apptest_gui": {
+  "frame_ms_avg": 0.8584
+ },
+ "apptest_jobsystem": {
+  "frame_ms_avg": 1.4305
+ },
+ "apptest_joystick": {
+  "frame_ms_avg": 0.4956
+ },
+ "apptest_loading": {
+  "frame_ms_avg": 0.7742
+ },
+ "apptest_lua": {
+  "frame_ms_avg": 2.3003
+ },
+ "apptest_luareload": {
+  "frame_ms_avg": 3.1646
+ },
+ "apptest_meshdeform": {
+  "frame_ms_avg": 0.9266
+ },
+ "apptest_meshsprites": {
+  "frame_ms_avg": 1.6754
+ },
+ "apptest_multitouch": {
+  "frame_ms_avg": 0.7466
+ },
+ "apptest_particles": {
+  "frame_ms_avg": 1.5377
+ },
+ "apptest_rotozoom": {
+  "frame_ms_avg": 1.049
+ },
+ "apptest_scaling": {
+  "frame_ms_avg": 1.0516
+ },
+ "apptest_shaders": {
+  "frame_ms_avg": 1.3387
+ },
+ "apptest_simdbench": {
+  "frame_ms_avg": 0.9297
+ },
+ "apptest_sinescroller": {
+  "frame_ms_avg": 0.6374
+ },
+ "apptest_texformats": {
+  "frame_ms_avg": 0.8727
+ },
+ "apptest_viewports": {
+  "frame_ms_avg": 2.1398
+ }
+}

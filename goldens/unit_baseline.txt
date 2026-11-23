@@ -1,0 +1,240 @@
+Internal ctest changing into directory: /home/joelsaleem/nCine/build
+Test project /home/joelsaleem/nCine/build
+        Start   1: Tests-gtest_array
+        Start   2: Tests-gtest_array_zerocapacity
+        Start   3: Tests-gtest_array_iterator
+        Start   4: Tests-gtest_array_reverseiterator
+        Start   5: Tests-gtest_array_operations
+        Start   6: Tests-gtest_array_algorithms
+        Start   7: Tests-gtest_array_sort
+        Start   8: Tests-gtest_array_movable
+        Start   9: Tests-gtest_array_refcounted
+        Start  10: Tests-gtest_array_operations_nontrivial
+        Start  11: Tests-gtest_array_object_policy_tag
+        Start  12: Tests-gtest_carray_iterator
+        Start  13: Tests-gtest_carray_algorithms
+        Start  14: Tests-gtest_carray_sort
+        Start  15: Tests-gtest_staticarray
+        Start  16: Tests-gtest_staticarray_iterator
+        Start  17: Tests-gtest_staticarray_reverseiterator
+        Start  18: Tests-gtest_staticarray_operations
+        Start  19: Tests-gtest_staticarray_algorithms
+        Start  20: Tests-gtest_staticarray_sort
+        Start  21: Tests-gtest_staticarray_movable
+        Start  22: Tests-gtest_staticarray_refcounted
+        Start  23: Tests-gtest_staticarray_operations_nontrivial
+        Start  24: Tests-gtest_staticarray_object_policy_tag
+        Start  25: Tests-gtest_list
+        Start  26: Tests-gtest_list_iterator
+        Start  27: Tests-gtest_list_operations
+        Start  28: Tests-gtest_list_algorithms
+        Start  29: Tests-gtest_list_refcounted
+        Start  30: Tests-gtest_string
+        Start  31: Tests-gtest_string_iterator
+        Start  32: Tests-gtest_string_reverseiterator
+        Start  33: Tests-gtest_string_operations
+        Start  34: Tests-gtest_string_utf8
+        Start  35: Tests-gtest_staticstring
+        Start  36: Tests-gtest_staticstring_iterator
+        Start  37: Tests-gtest_staticstring_reverseiterator
+        Start  38: Tests-gtest_staticstring_operations
+        Start  39: Tests-gtest_stringview
+        Start  40: Tests-gtest_stringview_iterator
+        Start  41: Tests-gtest_stringview_reverseiterator
+        Start  42: Tests-gtest_stringview_operations
+        Start  43: Tests-gtest_stringview_empty
+        Start  44: Tests-gtest_hashmap
+        Start  45: Tests-gtest_hashmap_iterator
+        Start  46: Tests-gtest_hashmap_algorithms
+        Start  47: Tests-gtest_hashmap_string
+        Start  48: Tests-gtest_hashmap_cstring
+        Start  49: Tests-gtest_hashmap_movable
+        Start  50: Tests-gtest_hashmap_refcounted
+        Start  51: Tests-gtest_statichashmap
+        Start  52: Tests-gtest_statichashmap_iterator
+        Start  53: Tests-gtest_statichashmap_algorithms
+        Start  54: Tests-gtest_statichashmap_string
+        Start  55: Tests-gtest_statichashmap_cstring
+        Start  56: Tests-gtest_statichashmap_movable
+        Start  57: Tests-gtest_statichashmap_refcounted
+        Start  58: Tests-gtest_hashmaplist
+        Start  59: Tests-gtest_hashmaplist_iterator
+        Start  60: Tests-gtest_hashmaplist_algorithms
+        Start  61: Tests-gtest_hashmaplist_string
+        Start  62: Tests-gtest_hashmaplist_cstring
+        Start  63: Tests-gtest_hashmaplist_movable
+        Start  64: Tests-gtest_hashmaplist_refcounted
+  1/117 Test   #1: Tests-gtest_array ...............................   Passed    0.08 sec
+  2/117 Test   #2: Tests-gtest_array_zerocapacity ..................   Passed    0.08 sec
+  3/117 Test   #3: Tests-gtest_array_iterator ......................   Passed    0.08 sec
+  4/117 Test   #4: Tests-gtest_array_reverseiterator ...............   Passed    0.08 sec
+  5/117 Test   #5: Tests-gtest_array_operations ....................   Passed    0.08 sec
+  6/117 Test   #6: Tests-gtest_array_algorithms ....................   Passed    0.08 sec
+  7/117 Test   #7: Tests-gtest_array_sort ..........................   Passed    0.07 sec
+  8/117 Test   #8: Tests-gtest_array_movable .......................   Passed    0.07 sec
+  9/117 Test   #9: Tests-gtest_array_refcounted ....................   Passed    0.07 sec
+ 10/117 Test  #10: Tests-gtest_array_operations_nontrivial .........   Passed    0.07 sec
+ 11/117 Test  #11: Tests-gtest_array_object_policy_tag .............   Passed    0.07 sec
+ 12/117 Test  #12: Tests-gtest_carray_iterator .....................   Passed    0.07 sec
+ 13/117 Test  #13: Tests-gtest_carray_algorithms ...................   Passed    0.07 sec
+ 14/117 Test  #14: Tests-gtest_carray_sort .........................   Passed    0.07 sec
+ 15/117 Test  #15: Tests-gtest_staticarray .........................   Passed    0.06 sec
+ 16/117 Test  #16: Tests-gtest_staticarray_iterator ................   Passed    0.06 sec
+ 17/117 Test  #17: Tests-gtest_staticarray_reverseiterator .........   Passed    0.06 sec
+ 18/117 Test  #18: Tests-gtest_staticarray_operations ..............   Passed    0.06 sec
+ 19/117 Test  #19: Tests-gtest_staticarray_algorithms ..............   Passed    0.06 sec
+ 20/117 Test  #20: Tests-gtest_staticarray_sort ....................   Passed    0.06 sec
+ 21/117 Test  #21: Tests-gtest_staticarray_movable .................   Passed    0.06 sec
+ 22/117 Test  #22: Tests-gtest_staticarray_refcounted ..............   Passed    0.06 sec
+ 23/117 Test  #23: Tests-gtest_staticarray_operations_nontrivial ...   Passed    0.06 sec
+ 24/117 Test  #24: Tests-gtest_staticarray_object_policy_tag .......   Passed    0.05 sec
+ 25/117 Test  #25: Tests-gtest_list ................................   Passed    0.05 sec
+ 26/117 Test  #26: Tests-gtest_list_iterator .......................   Passed    0.05 sec
+ 27/117 Test  #27: Tests-gtest_list_operations .....................   Passed    0.05 sec
+ 28/117 Test  #28: Tests-gtest_list_algorithms .....................   Passed    0.05 sec
+ 29/117 Test  #29: Tests-gtest_list_refcounted .....................   Passed    0.05 sec
+ 30/117 Test  #30: Tests-gtest_string ..............................   Passed    0.05 sec
+ 31/117 Test  #31: Tests-gtest_string_iterator .....................   Passed    0.05 sec
+ 32/117 Test  #32: Tests-gtest_string_reverseiterator ..............   Passed    0.05 sec
+ 33/117 Test  #33: Tests-gtest_string_operations ...................   Passed    0.04 sec
+ 34/117 Test  #34: Tests-gtest_string_utf8 .........................   Passed    0.04 sec
+ 35/117 Test  #35: Tests-gtest_staticstring ........................   Passed    0.04 sec
+ 36/117 Test  #36: Tests-gtest_staticstring_iterator ...............   Passed    0.04 sec
+ 37/117 Test  #37: Tests-gtest_staticstring_reverseiterator ........   Passed    0.04 sec
+ 38/117 Test  #38: Tests-gtest_staticstring_operations .............   Passed    0.04 sec
+ 39/117 Test  #39: Tests-gtest_stringview ..........................   Passed    0.04 sec
+ 40/117 Test  #40: Tests-gtest_stringview_iterator .................   Passed    0.04 sec
+ 41/117 Test  #41: Tests-gtest_stringview_reverseiterator ..........   Passed    0.04 sec
+ 42/117 Test  #42: Tests-gtest_stringview_operations ...............   Passed    0.03 sec
+ 43/117 Test  #43: Tests-gtest_stringview_empty ....................   Passed    0.03 sec
+ 44/117 Test  #45: Tests-gtest_hashmap_iterator ....................   Passed    0.03 sec
+ 45/117 Test  #46: Tests-gtest_hashmap_algorithms ..................   Passed    0.03 sec
+ 46/117 Test  #47: Tests-gtest_hashmap_string ......................   Passed    0.03 sec
+ 47/117 Test  #48: Tests-gtest_hashmap_cstring .....................   Passed    0.03 sec
+ 48/117 Test  #49: Tests-gtest_hashmap_movable .....................   Passed    0.03 sec
+ 49/117 Test  #50: Tests-gtest_hashmap_refcounted ..................   Passed    0.03 sec
+ 50/117 Test  #51: Tests-gtest_statichashmap .......................   Passed    0.03 sec
+ 51/117 Test  #52: Tests-gtest_statichashmap_iterator ..............   Passed    0.02 sec
+ 52/117 Test  #53: Tests-gtest_statichashmap_algorithms ............   Passed    0.02 sec
+ 53/117 Test  #54: Tests-gtest_statichashmap_string ................   Passed    0.02 sec
+ 54/117 Test  #55: Tests-gtest_statichashmap_cstring ...............   Passed    0.02 sec
+ 55/117 Test  #56: Tests-gtest_statichashmap_movable ...............   Passed    0.02 sec
+ 56/117 Test  #57: Tests-gtest_statichashmap_refcounted ............   Passed    0.02 sec
+ 57/117 Test  #58: Tests-gtest_hashmaplist .........................   Passed    0.02 sec
+ 58/117 Test  #59: Tests-gtest_hashmaplist_iterator ................   Passed    0.02 sec
+ 59/117 Test  #60: Tests-gtest_hashmaplist_algorithms ..............   Passed    0.02 sec
+        Start  65: Tests-gtest_hashset
+        Start  66: Tests-gtest_hashset_iterator
+        Start  67: Tests-gtest_hashset_algorithms
+        Start  68: Tests-gtest_hashset_string
+        Start  69: Tests-gtest_hashset_cstring
+        Start  70: Tests-gtest_hashset_movable
+        Start  71: Tests-gtest_hashset_refcounted
+        Start  72: Tests-gtest_statichashset
+        Start  73: Tests-gtest_statichashset_iterator
+        Start  74: Tests-gtest_statichashset_algorithms
+        Start  75: Tests-gtest_statichashset_string
+        Start  76: Tests-gtest_statichashset_cstring
+        Start  77: Tests-gtest_statichashset_movable
+        Start  78: Tests-gtest_statichashset_refcounted
+        Start  79: Tests-gtest_hashsetlist
+        Start  80: Tests-gtest_hashsetlist_iterator
+        Start  81: Tests-gtest_hashsetlist_algorithms
+        Start  82: Tests-gtest_hashsetlist_string
+        Start  83: Tests-gtest_hashsetlist_cstring
+        Start  84: Tests-gtest_hashsetlist_movable
+        Start  85: Tests-gtest_hashsetlist_refcounted
+        Start  86: Tests-gtest_sparseset
+        Start  87: Tests-gtest_sparseset_iterator
+        Start  88: Tests-gtest_sparseset_algorithms
+        Start  89: Tests-gtest_vector2
+        Start  90: Tests-gtest_vector3
+        Start  91: Tests-gtest_vector4
+        Start  92: Tests-gtest_rect
+        Start  93: Tests-gtest_matrix4x4
+        Start  94: Tests-gtest_matrix4x4_operations
+        Start  95: Tests-gtest_quaternion
+        Start  96: Tests-gtest_quaternion_operations
+        Start  97: Tests-gtest_uniqueptr
+        Start  98: Tests-gtest_uniqueptr_array
+        Start  99: Tests-gtest_sharedptr
+        Start 100: Tests-gtest_color
+        Start 101: Tests-gtest_colorf
+        Start 102: Tests-gtest_colorhdr
+        Start 103: Tests-gtest_random
+        Start 104: Tests-gtest_filesystem
+        Start 105: Tests-gtest_pointermath
+        Start 106: Tests-gtest_bitset
+        Start 107: Tests-gtest_optional
+        Start 108: Tests-gtest_optional_movable
+        Start 109: Tests-gtest_variant
+        Start 110: Tests-gtest_variant_movable
+        Start 111: Tests-gtest_pair
+        Start 112: Tests-gtest_pair_movable
+        Start 113: Tests-gtest_span
+        Start 114: Tests-gtest_span_iterator
+        Start 115: Tests-gtest_hash_functions
+        Start 116: Tests-gtest_atomic
+        Start 117: Tests-gtest_sharedptr_threads
+ 60/117 Test  #44: Tests-gtest_hashmap .............................   Passed    0.10 sec
+ 61/117 Test  #62: Tests-gtest_hashmaplist_cstring .................   Passed    0.08 sec
+ 62/117 Test  #61: Tests-gtest_hashmaplist_string ..................   Passed    0.08 sec
+ 63/117 Test  #63: Tests-gtest_hashmaplist_movable .................   Passed    0.08 sec
+ 64/117 Test  #64: Tests-gtest_hashmaplist_refcounted ..............   Passed    0.08 sec
+ 65/117 Test  #65: Tests-gtest_hashset .............................   Passed    0.07 sec
+ 66/117 Test  #66: Tests-gtest_hashset_iterator ....................   Passed    0.07 sec
+ 67/117 Test  #67: Tests-gtest_hashset_algorithms ..................   Passed    0.07 sec
+ 68/117 Test  #68: Tests-gtest_hashset_string ......................   Passed    0.07 sec
+ 69/117 Test  #69: Tests-gtest_hashset_cstring .....................   Passed    0.07 sec
+ 70/117 Test  #70: Tests-gtest_hashset_movable .....................   Passed    0.07 sec
+ 71/117 Test  #71: Tests-gtest_hashset_refcounted ..................   Passed    0.07 sec
+ 72/117 Test  #72: Tests-gtest_statichashset .......................   Passed    0.06 sec
+ 73/117 Test  #73: Tests-gtest_statichashset_iterator ..............   Passed    0.06 sec
+ 74/117 Test  #74: Tests-gtest_statichashset_algorithms ............   Passed    0.06 sec
+ 75/117 Test  #75: Tests-gtest_statichashset_string ................   Passed    0.06 sec
+ 76/117 Test  #76: Tests-gtest_statichashset_cstring ...............   Passed    0.06 sec
+ 77/117 Test  #77: Tests-gtest_statichashset_movable ...............   Passed    0.06 sec
+ 78/117 Test  #78: Tests-gtest_statichashset_refcounted ............   Passed    0.06 sec
+ 79/117 Test  #79: Tests-gtest_hashsetlist .........................   Passed    0.06 sec
+ 80/117 Test  #80: Tests-gtest_hashsetlist_iterator ................   Passed    0.05 sec
+ 81/117 Test  #81: Tests-gtest_hashsetlist_algorithms ..............   Passed    0.05 sec
+ 82/117 Test  #82: Tests-gtest_hashsetlist_string ..................   Passed    0.05 sec
+ 83/117 Test  #83: Tests-gtest_hashsetlist_cstring .................   Passed    0.05 sec
+ 84/117 Test  #84: Tests-gtest_hashsetlist_movable .................   Passed    0.05 sec
+ 85/117 Test  #85: Tests-gtest_hashsetlist_refcounted ..............   Passed    0.05 sec
+ 86/117 Test  #86: Tests-gtest_sparseset ...........................   Passed    0.05 sec
+ 87/117 Test  #87: Tests-gtest_sparseset_iterator ..................   Passed    0.05 sec
+ 88/117 Test  #88: Tests-gtest_sparseset_algorithms ................   Passed    0.05 sec
+ 89/117 Test  #89: Tests-gtest_vector2 .............................   Passed    0.04 sec
+ 90/117 Test  #90: Tests-gtest_vector3 .............................   Passed    0.04 sec
+ 91/117 Test  #91: Tests-gtest_vector4 .............................   Passed    0.04 sec
+ 92/117 Test  #92: Tests-gtest_rect ................................   Passed    0.04 sec
+ 93/117 Test  #93: Tests-gtest_matrix4x4 ...........................   Passed    0.04 sec
+ 94/117 Test  #94: Tests-gtest_matrix4x4_operations ................   Passed    0.04 sec
+ 95/117 Test  #95: Tests-gtest_quaternion ..........................   Passed    0.04 sec
+ 96/117 Test  #96: Tests-gtest_quaternion_operations ...............   Passed    0.04 sec
+ 97/117 Test  #97: Tests-gtest_uniqueptr ...........................   Passed    0.04 sec
+ 98/117 Test  #98: Tests-gtest_uniqueptr_array .....................   Passed    0.03 sec
+ 99/117 Test  #99: Tests-gtest_sharedptr ...........................   Passed    0.03 sec
+100/117 Test #100: Tests-gtest_color ...............................   Passed    0.03 sec
+101/117 Test #101: Tests-gtest_colorf ..............................   Passed    0.03 sec
+102/117 Test #102: Tests-gtest_colorhdr ............................   Passed    0.03 sec
+103/117 Test #103: Tests-gtest_random ..............................   Passed    0.03 sec
+104/117 Test #104: Tests-gtest_filesystem ..........................   Passed    0.03 sec
+105/117 Test #105: Tests-gtest_pointermath .........................   Passed    0.02 sec
+106/117 Test #106: Tests-gtest_bitset ..............................   Passed    0.02 sec
+107/117 Test #107: Tests-gtest_optional ............................   Passed    0.02 sec
+108/117 Test #108: Tests-gtest_optional_movable ....................   Passed    0.02 sec
+109/117 Test #109: Tests-gtest_variant .............................   Passed    0.02 sec
+110/117 Test #110: Tests-gtest_variant_movable .....................   Passed    0.02 sec
+111/117 Test #111: Tests-gtest_pair ................................   Passed    0.02 sec
+112/117 Test #112: Tests-gtest_pair_movable ........................   Passed    0.02 sec
+113/117 Test #114: Tests-gtest_span_iterator .......................   Passed    0.01 sec
+114/117 Test #113: Tests-gtest_span ................................   Passed    0.01 sec
+115/117 Test #115: Tests-gtest_hash_functions ......................   Passed    0.01 sec
+116/117 Test #117: Tests-gtest_sharedptr_threads ...................   Passed    0.01 sec
+117/117 Test #116: Tests-gtest_atomic ..............................   Passed    2.19 sec
+
+100% tests passed, 0 tests failed out of 117
+
+Total Test time (real) =   2.35 sec

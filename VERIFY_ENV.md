@@ -20,6 +20,19 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 - Tests need the sibling data repo: `git clone https://github.com/nCine/nCine-data ../nCine-data` (or `-DNCINE_DATA_DIR=`).
 - CMake option names `NCINE_PREFERRED_BACKEND`, `NCINE_BUILD_TESTS`, `NCINE_BUILD_UNIT_TESTS` are correct.
 - CMake's `file(DOWNLOAD)` of googletest/ImGui archives is blocked here; `git clone --depth 1 --branch <tag>` them into `build/googletest-1.18.0` and `build/imgui-1.93.0` instead.
+- Lua apptests need `scripts/` inside the data dir (upstream only installs it): `ln -s $PWD/scripts ../nCine-data/scripts`.
+- `python3` on PATH (`/usr/local/bin`) lacks Pillow/numpy; `verify.sh` falls back to `/usr/bin/python3`.
+
+## Determinism (fixes review gap: wall-clock animation)
+
+- `NCINE_CAPTURE` switches the engine `Clock` to virtual time (+1/60 s per frame) and fixes the RNG seeds.
+- Goldens are frame 30 (0.5 s virtual). `capture-goldens` captures twice; mismatches go to `goldens/nondeterministic.txt` and `check` reports them as SKIP.
+- Currently nondeterministic: `apptest_filebrowser` (lists the live filesystem).
+- ImGui under GLFW still reads `glfwGetTime()`; stable at frame 30 so far, revisit if a GUI apptest flakes.
+
+## Perf method
+
+`frame_ms_avg = (wall time to frame 330 - wall time to frame 30) / 300`, so startup cancels out. Advisory on this host.
 
 ## Configure
 
