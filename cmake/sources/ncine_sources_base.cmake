@@ -42,6 +42,9 @@ list(APPEND HEADERS
 )
 
 list(APPEND PRIVATE_HEADERS
+	${NCINE_ROOT}/src/include/igfx/Types.h
+	${NCINE_ROOT}/src/include/igfx/Resources.h
+	${NCINE_ROOT}/src/include/igfx/IDevice.h
 	${NCINE_ROOT}/src/include/common_headers.h
 	${NCINE_ROOT}/src/include/return_macros.h
 	${NCINE_ROOT}/src/include/Clock.h
