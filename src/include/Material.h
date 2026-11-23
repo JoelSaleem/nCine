@@ -152,6 +152,9 @@ class Material
 	nctl::UniquePtr<GLubyte[]> uniformsHostBuffer_;
 
 	void bind();
+#ifdef WITH_RHI
+	void bind(igfx::ICommandList &commandList);
+#endif
 	/// Wrapper around `GLShaderUniforms::commitUniforms()`
 	inline void commitUniforms() { shaderUniforms_.commitUniforms(); }
 	/// Wrapper around `GLShaderUniformBlocks::commitUniformBlocks()`

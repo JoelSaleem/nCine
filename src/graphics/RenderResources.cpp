@@ -1,3 +1,6 @@
+#ifdef WITH_RHI
+	#include "GLRhiDevice.h"
+#endif
 #include <cstddef> // for `offsetof()`
 #include <nctl/HashMapIterator.h>
 #include <nctl/StaticString.h>
@@ -33,6 +36,12 @@ namespace {
 
 char const * const RenderResources::ShadersDir = "shaders";
 
+#ifdef WITH_RHI
+nctl::UniquePtr<igfx::IDevice> RenderResources::rhiDevice_;
+igfx::ICommandList *RenderResources::rhiCommandList_ = nullptr;
+nctl::HashMap<uint64_t, igfx::IPipeline *> RenderResources::rhiPipelines_(64);
+nctl::Array<nctl::UniquePtr<igfx::IPipeline>> RenderResources::rhiPipelineStorage_(64);
+#endif
 nctl::UniquePtr<BinaryShaderCache> RenderResources::binaryShaderCache_;
 nctl::UniquePtr<RenderBuffersManager> RenderResources::buffersManager_;
 nctl::UniquePtr<RenderVaoPool> RenderResources::vaoPool_;
@@ -591,6 +600,32 @@ void RenderResources::create()
 }
 #endif
 
+#ifdef WITH_RHI
+igfx::IPipeline &RenderResources::rhiPipeline(const igfx::PipelineDesc &desc)
+{
+	// ponytail: keyed on the fields the OpenGL backend reads, add the vertex layout once Vulkan builds real pipelines
+	const uint64_t fields[] = {
+		static_cast<uint64_t>(reinterpret_cast<uintptr_t>(desc.program)),
+		static_cast<uint64_t>(desc.topology),
+		static_cast<uint64_t>(desc.blend.enabled) | (static_cast<uint64_t>(desc.blend.srcFactor) << 8) | (static_cast<uint64_t>(desc.blend.dstFactor) << 16),
+		static_cast<uint64_t>(desc.depth.testEnabled) | (static_cast<uint64_t>(desc.depth.writeEnabled) << 8) | (static_cast<uint64_t>(desc.depth.compareOp) << 16),
+		static_cast<uint64_t>(desc.cullMode) | (static_cast<uint64_t>(desc.colorFormat) << 8) | (static_cast<uint64_t>(desc.hasDepthAttachment) << 16)
+	};
+	const uint64_t key = nctl::fasthash64(fields, sizeof(fields), 0);
+
+	igfx::IPipeline **cached = rhiPipelines_.find(key);
+	if (cached != nullptr)
+		return **cached;
+
+	if (rhiPipelines_.size() == rhiPipelines_.capacity())
+		rhiPipelines_.rehash(rhiPipelines_.capacity() * 2);
+	rhiPipelineStorage_.pushBack(rhiDevice_->createPipeline(desc));
+	igfx::IPipeline *pipeline = rhiPipelineStorage_.back().get();
+	rhiPipelines_.insert(key, pipeline);
+	return *pipeline;
+}
+#endif
+
 void RenderResources::createMinimal()
 {
 	ZoneScoped;
@@ -607,6 +642,9 @@ void RenderResources::createMinimal()
 	buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
 	vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
 	hash64_ = nctl::makeUnique<Hash64>();
+#ifdef WITH_RHI
+	rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
+#endif
 
 	LOGI("Minimal rendering resources created");
 }
@@ -624,6 +662,12 @@ void RenderResources::dispose()
 	defaultCamera_.reset(nullptr);
 	renderBatcher_.reset(nullptr);
 	renderCommandPool_.reset(nullptr);
+#endif
+#ifdef WITH_RHI
+	rhiPipelines_.clear();
+	rhiPipelineStorage_.clear();
+	rhiCommandList_ = nullptr;
+	rhiDevice_.reset(nullptr);
 #endif
 	hash64_.reset(nullptr);
 	vaoPool_.reset(nullptr);

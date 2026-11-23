@@ -8,6 +8,9 @@
 #include <nctl/HashMap.h>
 #include "GLShaderProgram.h" // For the UniquePtr to invoke the destructor
 #include "GLShaderUniforms.h"
+#ifdef WITH_RHI
+	#include "igfx/IDevice.h"
+#endif
 
 #ifdef WITH_SCENEGRAPH
 	#include "Material.h"
@@ -160,6 +163,13 @@ class RenderResources
 	static inline RenderBuffersManager &buffersManager() { return *buffersManager_; }
 	static inline RenderVaoPool &vaoPool() { return *vaoPool_; }
 	static inline const Hash64 &hash64() { return *hash64_; }
+#ifdef WITH_RHI
+	static inline igfx::IDevice &rhiDevice() { return *rhiDevice_; }
+	/// Command list of the frame being recorded
+	static inline igfx::ICommandList &rhiCommandList() { return *rhiCommandList_; }
+	/// Returns the cached pipeline matching the description, creating it on first use
+	static igfx::IPipeline &rhiPipeline(const igfx::PipelineDesc &desc);
+#endif
 #ifdef WITH_SCENEGRAPH
 	static inline RenderCommandPool &renderCommandPool() { return *renderCommandPool_; }
 	static inline RenderBatcher &renderBatcher() { return *renderBatcher_; }
@@ -195,6 +205,13 @@ class RenderResources
 #endif
 
   private:
+#ifdef WITH_RHI
+	static nctl::UniquePtr<igfx::IDevice> rhiDevice_;
+	static igfx::ICommandList *rhiCommandList_;
+	static nctl::HashMap<uint64_t, igfx::IPipeline *> rhiPipelines_;
+	static nctl::Array<nctl::UniquePtr<igfx::IPipeline>> rhiPipelineStorage_;
+	static inline void setRhiCommandList(igfx::ICommandList *commandList) { rhiCommandList_ = commandList; }
+#endif
 	static nctl::UniquePtr<BinaryShaderCache> binaryShaderCache_;
 	static nctl::UniquePtr<RenderBuffersManager> buffersManager_;
 	static nctl::UniquePtr<RenderVaoPool> vaoPool_;

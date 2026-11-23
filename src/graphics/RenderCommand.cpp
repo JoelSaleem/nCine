@@ -5,6 +5,9 @@
 #include "Camera.h"
 #include "DrawableNode.h"
 #include "tracy.h"
+#ifdef WITH_RHI
+	#include "GLRhiDevice.h"
+#endif
 
 namespace ncine {
 
@@ -41,6 +44,52 @@ void RenderCommand::calculateMaterialSortKey()
 	materialSortKey_ = upper + lower;
 }
 
+#ifdef WITH_RHI
+void RenderCommand::issue()
+{
+	ZoneScoped;
+
+	if (geometry_.numVertices_ == 0 && geometry_.numIndices_ == 0)
+		return;
+
+	igfx::PipelineDesc pipelineDesc;
+	pipelineDesc.program = material_.shaderProgram_;
+	pipelineDesc.topology = topologyFromGL(geometry_.primitiveType_);
+	pipelineDesc.blend.enabled = material_.isBlendingEnabled();
+	pipelineDesc.blend.srcFactor = blendFactorFromGL(material_.srcBlendingFactor());
+	pipelineDesc.blend.dstFactor = blendFactorFromGL(material_.destBlendingFactor());
+	// Depth testing is always on, transparent commands are drawn back to front without writing depth
+	pipelineDesc.depth.testEnabled = true;
+	pipelineDesc.depth.writeEnabled = (material_.isBlendingEnabled() == false);
+
+	igfx::ICommandList &commandList = RenderResources::rhiCommandList();
+	commandList.bindPipeline(RenderResources::rhiPipeline(pipelineDesc));
+	material_.bind(commandList);
+	// ponytail: loose uniforms still go through the GL uniform caches, Vulkan needs them in a uniform buffer (Task 1.4)
+	material_.commitUniforms();
+
+	// ponytail: scissor save/restore stays on GL state until viewports become render passes (Task 1.4)
+	GLScissorTest::State scissorTestState = GLScissorTest::state();
+	if (scissorRect_.w > 0 && scissorRect_.h > 0)
+		GLScissorTest::enable(scissorRect_);
+
+	unsigned int vertexFormatOffset = 0;
+	if (numInstances_ > 0)
+		vertexFormatOffset = geometry_.vboParams().offset + (geometry_.firstVertex_ * geometry_.numElementsPerVertex_ * sizeof(GLfloat));
+	if (geometry_.vboParams().object)
+		commandList.bindVertexBuffer(*geometry_.vboParams().object, vertexFormatOffset);
+	if (geometry_.iboParams().object)
+		commandList.bindIndexBuffer(*geometry_.iboParams().object, geometry_.iboParams().offset, igfx::IndexType::UINT16);
+
+	const unsigned int firstVertex = static_cast<unsigned int>(geometry_.vboParams().offset / geometry_.numElementsPerVertex_ / sizeof(GLfloat)) + geometry_.firstVertex_;
+	if (geometry_.numIndices_ > 0)
+		commandList.drawIndexed(geometry_.numIndices_, numInstances_, geometry_.firstIndex_, static_cast<int>(firstVertex));
+	else
+		commandList.draw(geometry_.numVertices_, numInstances_, firstVertex);
+
+	GLScissorTest::setState(scissorTestState);
+}
+#else
 void RenderCommand::issue()
 {
 	ZoneScoped;
@@ -70,6 +119,7 @@ void RenderCommand::issue()
 
 	GLScissorTest::setState(scissorTestState);
 }
+#endif
 
 void RenderCommand::setScissor(GLint x, GLint y, GLsizei width, GLsizei height)
 {

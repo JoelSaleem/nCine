@@ -34,9 +34,10 @@ class ICommandList
 	virtual void bindIndexBuffer(IBuffer &buffer, unsigned long offset, IndexType type) = 0;
 	/// `binding` is the one reported by `UniformBlockInfo`, `offset` honours `Limits::uniformBufferOffsetAlignment`
 	virtual void bindUniformBuffer(int binding, IBuffer &buffer, unsigned long offset, unsigned long size) = 0;
-	/// `binding` is the one reported by the sampler's `UniformInfo`
-	virtual void bindTexture(int binding, ITexture &texture) = 0;
+	/// `binding` is the texture unit (OpenGL) or the sampler's reflected binding (Vulkan), `nullptr` unbinds it
+	virtual void bindTexture(int binding, const ITexture *texture) = 0;
 
+	/// An `instanceCount` of zero issues a non-instanced draw (one instance on backends without that distinction)
 	virtual void draw(unsigned int vertexCount, unsigned int instanceCount, unsigned int firstVertex) = 0;
 	virtual void drawIndexed(unsigned int indexCount, unsigned int instanceCount, unsigned int firstIndex, int vertexOffset) = 0;
 };

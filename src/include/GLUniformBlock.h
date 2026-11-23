@@ -55,6 +55,9 @@ class GLUniformBlock
 	char name_[MaxNameLength];
 
 	friend class GLUniformBlockCache;
+#ifdef WITH_RHI
+	friend class GLShaderProgram; // reflection lists the block members
+#endif
 };
 
 }

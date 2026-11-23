@@ -14,7 +14,7 @@ class IBuffer
 	virtual ~IBuffer() = default;
 
 	virtual const BufferDesc &desc() const = 0;
-	/// Pointer to the mapped memory of a dynamic buffer, `nullptr` for static ones
+	/// Start of the buffer memory while it is mapped from offset zero, `nullptr` otherwise
 	virtual uint8_t *mappedData() = 0;
 	/// Makes host writes in the given range visible to the GPU
 	virtual void flush(unsigned long offset, unsigned long size) = 0;
@@ -49,7 +49,8 @@ class IShaderProgram
 
 	virtual ~IShaderProgram() = default;
 
-	virtual Status status() const = 0;
+	/// Not `status()`: the OpenGL backend implements this on `GLShaderProgram`, which already has one
+	virtual Status linkStatus() const = 0;
 	virtual const nctl::String &infoLog() const = 0;
 
 	virtual const nctl::Array<UniformInfo> &uniforms() const = 0;

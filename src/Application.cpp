@@ -65,7 +65,15 @@ namespace {
 	bool saveCapture(const char *path, const Viewport *screenViewport, int width, int height)
 	{
 		nctl::UniquePtr<unsigned char[]> pixels = nctl::makeUnique<unsigned char[]>(width * height * 3);
-#ifdef WITH_SCENEGRAPH
+#ifdef WITH_RHI
+		// Every backend reads back through the same interface, rows already top-down
+		static_cast<void>(screenViewport);
+		if (RenderResources::rhiDevice().readbackFrame(pixels.get(), width, height) == false)
+			return false;
+		const bool verticalFlip = false;
+#else
+		const bool verticalFlip = true; // `glReadPixels()` rows are bottom-up
+	#ifdef WITH_SCENEGRAPH
 		if (screenViewport != nullptr)
 		{
 			if (screenViewport->savePixels(pixels.get()) == false)
@@ -81,12 +89,13 @@ namespace {
 			glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.get());
 			glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
 		}
+#endif
 
 		IImageSaver::Properties properties;
 		properties.width = width;
 		properties.height = height;
 		properties.format = IImageSaver::Format::RGB8;
-		properties.verticalFlip = true; // `glReadPixels()` rows are bottom-up
+		properties.verticalFlip = verticalFlip;
 		properties.pixels = pixels.get();
 		return IImageSaver::save(properties, path);
 	}
@@ -393,6 +402,9 @@ void Application::step()
 	if (clock().isVirtual())
 		clock().advanceVirtual(static_cast<uint64_t>(FrameCapture::FixedFrameTime * clock().frequency()));
 	frameTimer_->addFrame();
+#ifdef WITH_RHI
+	RenderResources::setRhiCommandList(&RenderResources::rhiDevice().beginFrame());
+#endif
 
 #ifdef WITH_IMGUI
 	{
@@ -555,6 +567,9 @@ void Application::step()
 			quit();
 	}
 
+#ifdef WITH_RHI
+	RenderResources::rhiDevice().endFrame();
+#endif
 	gfxDevice_->update();
 	FrameMark;
 	TracyGpuCollect;

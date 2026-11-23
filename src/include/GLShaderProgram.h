@@ -9,6 +9,9 @@
 #include "GLUniformBlock.h"
 #include "GLAttribute.h"
 #include "GLVertexFormat.h"
+#ifdef WITH_RHI
+	#include "igfx/Resources.h"
+#endif
 
 namespace ncine {
 
@@ -16,6 +19,9 @@ class GLShader;
 
 /// A class to handle OpenGL shader programs
 class GLShaderProgram
+#ifdef WITH_RHI
+    : public igfx::IShaderProgram // the OpenGL backend of the render hardware interface, see `GLRhiDevice.h`
+#endif
 {
   public:
 	enum class Introspection
@@ -105,7 +111,26 @@ class GLShaderProgram
 	/*! If the flag is true the shader program will automatically log compilation and linking errors. */
 	inline void setLogOnErrors(bool shouldLogOnErrors) { shouldLogOnErrors_ = shouldLogOnErrors; }
 
+#ifdef WITH_RHI
+	igfx::IShaderProgram::Status linkStatus() const override;
+	const nctl::String &infoLog() const override;
+	const nctl::Array<igfx::UniformInfo> &uniforms() const override;
+	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override;
+	const nctl::Array<igfx::AttributeInfo> &attributes() const override;
+	int looseUniformsSize() const override { return static_cast<int>(uniformsSize_); }
+#endif
+
   private:
+#ifdef WITH_RHI
+	/// Reflection is built from the introspection data on first request
+	void buildReflection() const;
+	mutable bool reflectionBuilt_ = false;
+	mutable nctl::String rhiInfoLog_;
+	mutable nctl::Array<igfx::UniformInfo> rhiUniforms_ = nctl::Array<igfx::UniformInfo>(MaxNumUniforms);
+	mutable nctl::Array<igfx::UniformBlockInfo> rhiUniformBlocks_ = nctl::Array<igfx::UniformBlockInfo>(4);
+	mutable nctl::Array<igfx::AttributeInfo> rhiAttributes_ = nctl::Array<igfx::AttributeInfo>(GLVertexFormat::MaxAttributes);
+	friend class GLRhiCommandList; // assigns block bindings when a pipeline is bound
+#endif
 	/// Max number of discoverable uniforms
 	static const unsigned int MaxNumUniforms = 32;
 

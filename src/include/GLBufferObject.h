@@ -2,11 +2,17 @@
 #define CLASS_NCINE_GLBUFFEROBJECT
 
 #include "GLHashMap.h"
+#ifdef WITH_RHI
+	#include "igfx/Resources.h"
+#endif
 
 namespace ncine {
 
 /// A class to handle OpenGL buffer objects of different kinds
 class GLBufferObject
+#ifdef WITH_RHI
+    : public igfx::IBuffer // the OpenGL backend of the render hardware interface, see `GLRhiDevice.h`
+#endif
 {
   public:
 	explicit GLBufferObject(GLenum target);
@@ -36,6 +42,13 @@ class GLBufferObject
 
 	void setObjectLabel(const char *label);
 
+#ifdef WITH_RHI
+	const igfx::BufferDesc &desc() const override { return rhiDesc_; }
+	uint8_t *mappedData() override { return mappedBase_; }
+	void flush(unsigned long offset, unsigned long size) override;
+	void update(unsigned long offset, unsigned long size, const void *data) override;
+#endif
+
   private:
 	static class GLHashMap<GLBufferObjectMappingFunc::Size, GLBufferObjectMappingFunc> boundBuffers_;
 
@@ -53,6 +66,12 @@ class GLBufferObject
 	GLenum target_;
 	GLsizeiptr size_;
 	bool mapped_;
+#ifdef WITH_RHI
+	igfx::BufferDesc rhiDesc_;
+	/// Start of the mapping when the whole buffer is mapped from offset zero
+	uint8_t *mappedBase_ = nullptr;
+	friend class GLRhiDevice;
+#endif
 
 	static const int MaxIndexBufferRange = 128;
 	/// Current bound index for buffer base. Negative if not bound.

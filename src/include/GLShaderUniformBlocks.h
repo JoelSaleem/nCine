@@ -1,6 +1,9 @@
 #ifndef CLASS_NCINE_GLSHADERUNIFORMBLOCKS
 #define CLASS_NCINE_GLSHADERUNIFORMBLOCKS
 
+#ifdef WITH_RHI
+	#include "igfx/IDevice.h"
+#endif
 #include <nctl/StaticHashMap.h>
 #include <nctl/String.h>
 #include "GLUniformBlockCache.h"
@@ -33,6 +36,10 @@ class GLShaderUniformBlocks
 	void commitUniformBlocks();
 
 	void bind();
+#ifdef WITH_RHI
+	/// Binds every block range through the command list, block index as the binding
+	void bind(igfx::ICommandList &commandList);
+#endif
 
   private:
 	GLShaderProgram *shaderProgram_;

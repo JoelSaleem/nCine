@@ -166,6 +166,17 @@ void Material::bind()
 	}
 }
 
+#ifdef WITH_RHI
+void Material::bind(igfx::ICommandList &commandList)
+{
+	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
+		commandList.bindTexture(static_cast<int>(i), textures_[i]);
+
+	if (shaderProgram_)
+		shaderUniformBlocks_.bind(commandList);
+}
+#endif
+
 void Material::defineVertexFormat(const GLBufferObject *vbo, const GLBufferObject *ibo, unsigned int vboOffset)
 {
 	shaderProgram_->defineVertexFormat(vbo, ibo, vboOffset);
