@@ -9,6 +9,9 @@ namespace ncine {
 namespace {
 
 	const char *ValidationLayerName = "VK_LAYER_KHRONOS_validation";
+	/// Depth clip control keeps OpenGL's [-1, 1] clip depth, so projections and shaders need no change
+	const char *RequiredDeviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME };
+	const uint32_t NumRequiredDeviceExtensions = sizeof(RequiredDeviceExtensions) / sizeof(RequiredDeviceExtensions[0]);
 
 	bool hasInstanceLayer(const char *name)
 	{
@@ -410,7 +413,12 @@ bool VkRhiDevice::pickPhysicalDevice()
 	{
 		VkPhysicalDeviceProperties properties;
 		vkGetPhysicalDeviceProperties(device, &properties);
-		if (properties.apiVersion < VK_API_VERSION_1_3 || hasDeviceExtension(device, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == false)
+		if (properties.apiVersion < VK_API_VERSION_1_3)
+			continue;
+		bool hasExtensions = true;
+		for (const char *extension : RequiredDeviceExtensions)
+			hasExtensions = hasExtensions && hasDeviceExtension(device, extension);
+		if (hasExtensions == false)
 			continue;
 
 		uint32_t numFamilies = 0;
@@ -436,23 +444,28 @@ bool VkRhiDevice::pickPhysicalDevice()
 		}
 	}
 
-	LOGE("No Vulkan 1.3 device can present to the window surface");
+	LOGE("No Vulkan 1.3 device with swapchain, push descriptor and depth clip control can present to the window surface");
 	return false;
 }
 
 bool VkRhiDevice::createDevice()
 {
+	VkPhysicalDeviceDepthClipControlFeaturesEXT supportedClipControl = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT };
 	VkPhysicalDeviceVulkan13Features supported13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+	supported13.pNext = &supportedClipControl;
 	VkPhysicalDeviceFeatures2 supported = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	supported.pNext = &supported13;
 	vkGetPhysicalDeviceFeatures2(physicalDevice_, &supported);
-	if (supported13.dynamicRendering == VK_FALSE || supported13.synchronization2 == VK_FALSE)
+	if (supported13.dynamicRendering == VK_FALSE || supported13.synchronization2 == VK_FALSE || supportedClipControl.depthClipControl == VK_FALSE)
 	{
-		LOGE("The Vulkan device lacks dynamic rendering or synchronization2");
+		LOGE("The Vulkan device lacks dynamic rendering, synchronization2 or depth clip control");
 		return false;
 	}
 
+	VkPhysicalDeviceDepthClipControlFeaturesEXT clipControl = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT };
+	clipControl.depthClipControl = VK_TRUE;
 	VkPhysicalDeviceVulkan13Features features13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+	features13.pNext = &clipControl;
 	features13.dynamicRendering = VK_TRUE;
 	features13.synchronization2 = VK_TRUE;
 
@@ -462,13 +475,12 @@ bool VkRhiDevice::createDevice()
 	queueInfo.queueCount = 1;
 	queueInfo.pQueuePriorities = &priority;
 
-	const char *swapchainExtension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 	VkDeviceCreateInfo deviceInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 	deviceInfo.pNext = &features13;
 	deviceInfo.queueCreateInfoCount = 1;
 	deviceInfo.pQueueCreateInfos = &queueInfo;
-	deviceInfo.enabledExtensionCount = 1;
-	deviceInfo.ppEnabledExtensionNames = &swapchainExtension;
+	deviceInfo.enabledExtensionCount = NumRequiredDeviceExtensions;
+	deviceInfo.ppEnabledExtensionNames = RequiredDeviceExtensions;
 	VK_CHECK(vkCreateDevice(physicalDevice_, &deviceInfo, nullptr, &device_));
 	vkGetDeviceQueue(device_, queueFamily_, 0, &queue_);
 	return true;
