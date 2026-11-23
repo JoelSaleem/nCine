@@ -56,6 +56,7 @@ class GLTexture
 	const igfx::TextureDesc &desc() const override { return rhiDesc_; }
 	void upload(unsigned int mipLevel, const void *data) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
+	bool download(unsigned int mipLevel, void *data) override;
 #endif
 
   private:

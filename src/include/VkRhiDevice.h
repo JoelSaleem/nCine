@@ -84,6 +84,41 @@ class VkRhiShaderProgram : public igfx::IShaderProgram
 	VkShaderModule fragmentModule_ = VK_NULL_HANDLE;
 };
 
+/// Sampled 2D image; RGB8 is stored as RGBA8, as Vulkan does not guarantee three-channel sampled formats
+class VkRhiTexture : public igfx::ITexture
+{
+  public:
+	VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc);
+	~VkRhiTexture() override;
+
+	inline bool isValid() const { return image_ != VK_NULL_HANDLE; }
+	inline VkImageView view() const { return view_; }
+	inline VkSampler sampler() const { return sampler_; }
+
+	const igfx::TextureDesc &desc() const override { return desc_; }
+	void upload(unsigned int mipLevel, const void *data) override;
+	void setSampler(const igfx::SamplerDesc &sampler) override;
+	bool download(unsigned int mipLevel, void *data) override;
+
+  private:
+	static const unsigned int MaxMipLevels = 16;
+
+	VkRhiDevice &device_;
+	igfx::TextureDesc desc_;
+	VkFormat format_ = VK_FORMAT_UNDEFINED;
+	VkImage image_ = VK_NULL_HANDLE;
+	VmaAllocation allocation_ = nullptr;
+	VkImageView view_ = VK_NULL_HANDLE;
+	VkSampler sampler_ = VK_NULL_HANDLE;
+	VkImageLayout layouts_[MaxMipLevels];
+
+	unsigned int levelWidth(unsigned int mipLevel) const;
+	unsigned int levelHeight(unsigned int mipLevel) const;
+	/// Bytes per pixel as stored, which differs from the upload format for RGB8
+	unsigned int storedBytesPerPixel() const;
+	void transitionLevel(VkCommandBuffer commandBuffer, unsigned int mipLevel, VkImageLayout newLayout);
+};
+
 class VkRhiCommandList : public igfx::ICommandList
 {
   public:
@@ -149,6 +184,24 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	/// Must be called outside a render pass, it submits the work recorded so far and waits for it
 	bool readbackFrame(uint8_t *rgbPixels, int width, int height) override;
 
+	/// Records commands with `record(VkCommandBuffer)` in a separate command buffer, submits it and waits
+	template <class Recorder>
+	void immediateSubmit(Recorder &&record)
+	{
+		vkResetCommandPool(device_, transferPool_, 0);
+		VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkBeginCommandBuffer(transferCommandBuffer_, &beginInfo);
+		record(transferCommandBuffer_);
+		vkEndCommandBuffer(transferCommandBuffer_);
+		VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &transferCommandBuffer_;
+		vkResetFences(device_, 1, &transferFence_);
+		vkQueueSubmit(queue_, 1, &submitInfo, transferFence_);
+		vkWaitForFences(device_, 1, &transferFence_, VK_TRUE, UINT64_MAX);
+	}
+
   private:
 	static const unsigned int FramesInFlight = 2;
 
@@ -202,6 +255,10 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	VkRhiCommandList commandList_;
 
 	nctl::UniquePtr<VkRhiBuffer> readbackBuffer_;
+	/// One-off transfers (texture uploads and downloads) outside the frames in flight
+	VkCommandPool transferPool_ = VK_NULL_HANDLE;
+	VkCommandBuffer transferCommandBuffer_ = VK_NULL_HANDLE;
+	VkFence transferFence_ = VK_NULL_HANDLE;
 
 	bool init(const VkSurfaceProvider &provider);
 	bool createInstance(const VkSurfaceProvider &provider);
@@ -219,6 +276,7 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	                                                    const VkDebugUtilsMessengerCallbackDataEXT *data, void *userData);
 
 	friend class VkRhiCommandList;
+	friend class VkRhiTexture;
 };
 
 /// Creates the Vulkan device for the GLFW window, validation on when `NCINE_VK_VALIDATION` is set

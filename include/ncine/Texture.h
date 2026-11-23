@@ -10,6 +10,9 @@ namespace ncine {
 
 class ITextureLoader;
 class GLTexture;
+namespace igfx {
+	class ITexture;
+}
 
 /// Texture class
 class DLL_PUBLIC Texture : public Object
@@ -151,6 +154,8 @@ class DLL_PUBLIC Texture : public Object
 
   private:
 	nctl::UniquePtr<GLTexture> glTexture_;
+	/// The texture of a non-OpenGL graphics backend, `glTexture_` is null then
+	nctl::UniquePtr<igfx::ITexture> rhiTexture_;
 	int width_;
 	int height_;
 	int mipMapLevels_;

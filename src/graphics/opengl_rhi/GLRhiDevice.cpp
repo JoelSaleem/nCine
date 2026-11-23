@@ -196,6 +196,17 @@ void GLTexture::setSampler(const igfx::SamplerDesc &sampler)
 	texParameteri(GL_TEXTURE_WRAP_T, addressModeToGL(sampler.addressV));
 }
 
+bool GLTexture::download(unsigned int mipLevel, void *data)
+{
+	const GLFormat glFormat = formatToGL(rhiDesc_.format);
+	GLint previousAlignment = 4;
+	glGetIntegerv(GL_PACK_ALIGNMENT, &previousAlignment);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	getTexImage(static_cast<GLint>(mipLevel), glFormat.format, glFormat.type, data);
+	glPixelStorei(GL_PACK_ALIGNMENT, previousAlignment);
+	return true;
+}
+
 igfx::IShaderProgram::Status GLShaderProgram::linkStatus() const
 {
 	switch (status_)

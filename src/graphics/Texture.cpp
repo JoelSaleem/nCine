@@ -7,6 +7,10 @@
 #include "GLTexture.h"
 #include "RenderStatistics.h"
 #include "tracy.h"
+#include "igfx/Resources.h"
+#ifdef WITH_RHI
+	#include "RenderResources.h"
+#endif
 
 namespace ncine {
 
@@ -59,6 +63,49 @@ Texture::Format formatToNc(GLenum format)
 	}
 }
 
+/// Vulkan mode keeps every texture on the render hardware interface, `glTexture_` stays null
+inline bool usingVulkan()
+{
+#ifdef WITH_RHI
+	return igfx::isVulkanSelected();
+#else
+	return false;
+#endif
+}
+
+igfx::Format rhiFormatFromGL(GLenum internalFormat)
+{
+	switch (internalFormat)
+	{
+		case GL_R8: return igfx::Format::R8;
+		case GL_RG8: return igfx::Format::RG8;
+		case GL_RGB8: return igfx::Format::RGB8;
+		case GL_RGBA8: return igfx::Format::RGBA8;
+		default: return igfx::Format::UNDEFINED;
+	}
+}
+
+igfx::SamplerDesc rhiSamplerDesc(Texture::Filtering minFiltering, Texture::Filtering magFiltering, Texture::Wrap wrapMode)
+{
+	igfx::SamplerDesc sampler;
+	sampler.magFilter = (magFiltering == Texture::Filtering::NEAREST) ? igfx::Filter::NEAREST : igfx::Filter::LINEAR;
+	switch (minFiltering)
+	{
+		case Texture::Filtering::NEAREST: sampler.minFilter = igfx::Filter::NEAREST; sampler.mipmapMode = igfx::MipmapMode::NONE; break;
+		case Texture::Filtering::LINEAR: sampler.minFilter = igfx::Filter::LINEAR; sampler.mipmapMode = igfx::MipmapMode::NONE; break;
+		case Texture::Filtering::NEAREST_MIPMAP_NEAREST: sampler.minFilter = igfx::Filter::NEAREST; sampler.mipmapMode = igfx::MipmapMode::NEAREST; break;
+		case Texture::Filtering::LINEAR_MIPMAP_NEAREST: sampler.minFilter = igfx::Filter::LINEAR; sampler.mipmapMode = igfx::MipmapMode::NEAREST; break;
+		case Texture::Filtering::NEAREST_MIPMAP_LINEAR: sampler.minFilter = igfx::Filter::NEAREST; sampler.mipmapMode = igfx::MipmapMode::LINEAR; break;
+		case Texture::Filtering::LINEAR_MIPMAP_LINEAR: sampler.minFilter = igfx::Filter::LINEAR; sampler.mipmapMode = igfx::MipmapMode::LINEAR; break;
+	}
+	const igfx::AddressMode addressMode = (wrapMode == Texture::Wrap::REPEAT) ? igfx::AddressMode::REPEAT
+	                                      : (wrapMode == Texture::Wrap::MIRRORED_REPEAT) ? igfx::AddressMode::MIRRORED_REPEAT
+	                                                                                     : igfx::AddressMode::CLAMP_TO_EDGE;
+	sampler.addressU = addressMode;
+	sampler.addressV = addressMode;
+	return sampler;
+}
+
 uint32_t *chromaKeyPixels(uint32_t *destBuffer, const unsigned char *srcBuffer, unsigned int numPixels, const Color &chromaKeyColor)
 {
 	// The alpha value is masked out to perform the comparison
@@ -83,7 +130,7 @@ uint32_t *chromaKeyPixels(uint32_t *destBuffer, const unsigned char *srcBuffer, 
 ///////////////////////////////////////////////////////////
 
 Texture::Texture()
-    : Object(ObjectType::TEXTURE), glTexture_(nctl::makeUnique<GLTexture>(GL_TEXTURE_2D)),
+    : Object(ObjectType::TEXTURE), glTexture_(usingVulkan() ? nctl::UniquePtr<GLTexture>(nullptr) : nctl::makeUnique<GLTexture>(GL_TEXTURE_2D)),
       width_(0), height_(0), mipMapLevels_(0), isCompressed_(false), format_(Format::UNKNOWN), dataSize_(0),
       minFiltering_(Filtering::NEAREST), magFiltering_(Filtering::NEAREST), wrapMode_(Wrap::REPEAT),
       isChromaKeyEnabled_(false), chromaKeyColor_(Color::Magenta)
@@ -135,7 +182,7 @@ Texture::Texture(const char *filename)
 Texture::~Texture()
 {
 	// Don't remove data from statistics if this is a moved out object
-	if (dataSize_ > 0 && glTexture_)
+	if (dataSize_ > 0 && (glTexture_ || rhiTexture_))
 		RenderStatistics::removeTexture(dataSize_);
 }
 
@@ -161,9 +208,12 @@ void Texture::init(const char *name, Format format, int mipMapCount, int width, 
 	if (dataSize_ > 0)
 		RenderStatistics::removeTexture(dataSize_);
 
-	glTexture_->bind();
 	setName(name);
-	glTexture_->setObjectLabel(name);
+	if (glTexture_)
+	{
+		glTexture_->bind();
+		glTexture_->setObjectLabel(name);
+	}
 	initialize(texLoader);
 
 	RenderStatistics::addTexture(dataSize_);
@@ -202,9 +252,12 @@ bool Texture::loadFromMemory(const char *bufferName, const unsigned char *buffer
 	if (dataSize_ > 0)
 		RenderStatistics::removeTexture(dataSize_);
 
-	glTexture_->bind();
 	setName(bufferName);
-	glTexture_->setObjectLabel(bufferName);
+	if (glTexture_)
+	{
+		glTexture_->bind();
+		glTexture_->setObjectLabel(bufferName);
+	}
 	initialize(*texLoader);
 	load(*texLoader);
 
@@ -224,9 +277,12 @@ bool Texture::loadFromFile(const char *filename)
 	if (dataSize_ > 0)
 		RenderStatistics::removeTexture(dataSize_);
 
-	glTexture_->bind();
 	setName(filename);
-	glTexture_->setObjectLabel(filename);
+	if (glTexture_)
+	{
+		glTexture_->bind();
+		glTexture_->setObjectLabel(filename);
+	}
 	initialize(*texLoader);
 	load(*texLoader);
 
@@ -267,6 +323,20 @@ bool Texture::loadFromTexels(const unsigned char *bufferPtr, unsigned int level,
 		data = reinterpret_cast<const unsigned char *>(chromaPixels.get());
 	}
 
+	if (rhiTexture_)
+	{
+		// ponytail: whole mip levels only, sub-region updates need an `ITexture` region upload
+		const unsigned int levelWidth = (width_ >> level) > 0 ? (width_ >> level) : 1;
+		const unsigned int levelHeight = (height_ >> level) > 0 ? (height_ >> level) : 1;
+		if (x != 0 || y != 0 || width != levelWidth || height != levelHeight)
+		{
+			LOGE_X("Texture \"%s\": only whole mip levels can be updated on Vulkan", name());
+			return false;
+		}
+		rhiTexture_->upload(level, data);
+		return true;
+	}
+
 	const GLenum format = ncFormatToNonInternal(format_);
 	glGetError();
 	glTexture_->texSubImage2D(level, x, y, width, height, format, GL_UNSIGNED_BYTE, data);
@@ -288,6 +358,9 @@ bool Texture::saveToMemory(unsigned char *bufferPtr)
 
 bool Texture::saveToMemory(unsigned char *bufferPtr, unsigned int level)
 {
+	if (rhiTexture_)
+		return rhiTexture_->download(level, bufferPtr);
+
 #if !defined(WITH_OPENGLES) && !defined(__EMSCRIPTEN__)
 	const GLenum format = ncFormatToNonInternal(format_);
 	glGetError();
@@ -320,6 +393,13 @@ unsigned int Texture::numChannels() const
 
 void Texture::setMinFiltering(Filtering filter)
 {
+	if (rhiTexture_)
+	{
+		minFiltering_ = filter;
+		rhiTexture_->setSampler(rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_));
+		return;
+	}
+
 	GLenum glFilter = GL_NEAREST;
 	// clang-format off
 	switch (filter)
@@ -341,6 +421,13 @@ void Texture::setMinFiltering(Filtering filter)
 
 void Texture::setMagFiltering(Filtering filter)
 {
+	if (rhiTexture_)
+	{
+		magFiltering_ = filter;
+		rhiTexture_->setSampler(rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_));
+		return;
+	}
+
 	GLenum glFilter = GL_NEAREST;
 	// clang-format off
 	switch (filter)
@@ -358,6 +445,13 @@ void Texture::setMagFiltering(Filtering filter)
 
 void Texture::setWrap(Wrap wrapMode)
 {
+	if (rhiTexture_)
+	{
+		wrapMode_ = wrapMode;
+		rhiTexture_->setSampler(rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_));
+		return;
+	}
+
 	GLenum glWrap = GL_REPEAT;
 	// clang-format off
 	switch (wrapMode)
@@ -377,13 +471,16 @@ void Texture::setWrap(Wrap wrapMode)
 
 void Texture::setGLTextureLabel(const char *label)
 {
-	glTexture_->setObjectLabel(label);
+	if (glTexture_)
+		glTexture_->setObjectLabel(label);
 }
 
 /*! The pointer is an opaque handle to be used only by ImGui or Nuklear.
  *  It is considered immutable from an user point of view and thus retrievable by a constant method. */
 void *Texture::guiTexId() const
 {
+	if (rhiTexture_)
+		return const_cast<void *>(reinterpret_cast<const void *>(rhiTexture_.get()));
 	return const_cast<void *>(reinterpret_cast<const void *>(glTexture_.get()));
 }
 
@@ -393,6 +490,53 @@ void *Texture::guiTexId() const
 
 void Texture::initialize(const ITextureLoader &texLoader)
 {
+#ifdef WITH_RHI
+	if (usingVulkan())
+	{
+		const TextureFormat &texFormat = texLoader.texFormat();
+		FATAL_ASSERT_MSG(texFormat.isCompressed() == false, "Compressed textures are not supported on Vulkan yet");
+		const int maxTextureSize = RenderResources::rhiDevice().limits().maxTextureSize;
+		FATAL_ASSERT_MSG_X(texLoader.width() <= maxTextureSize && texLoader.height() <= maxTextureSize, "Texture size %dx%d is bigger than device maximum %d",
+		                   texLoader.width(), texLoader.height(), maxTextureSize);
+
+		GLenum internalFormat = texFormat.internalFormat();
+		GLenum format = texFormat.format();
+		unsigned long dataSize = texLoader.dataSize();
+		if (format == GL_RGB && isChromaKeyEnabled_)
+		{
+			internalFormat = GL_RGBA8;
+			format = GL_RGBA;
+			dataSize = texLoader.width() * texLoader.height() * 4;
+		}
+
+		// Same defaults as the OpenGL path
+		wrapMode_ = Wrap::CLAMP_TO_EDGE;
+		magFiltering_ = Filtering::LINEAR;
+		minFiltering_ = (texLoader.mipMapCount() > 1) ? Filtering::LINEAR_MIPMAP_LINEAR : Filtering::LINEAR;
+
+		igfx::TextureDesc desc;
+		desc.width = texLoader.width();
+		desc.height = texLoader.height();
+		desc.format = rhiFormatFromGL(internalFormat);
+		desc.mipLevels = static_cast<unsigned int>(texLoader.mipMapCount());
+		desc.sampler = rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_);
+		FATAL_ASSERT_MSG_X(desc.format != igfx::Format::UNDEFINED, "Texture format 0x%x is not supported on Vulkan yet", internalFormat);
+		if (rhiTexture_ == nullptr || rhiTexture_->desc().width != desc.width || rhiTexture_->desc().height != desc.height ||
+		    rhiTexture_->desc().format != desc.format || rhiTexture_->desc().mipLevels != desc.mipLevels)
+			rhiTexture_ = RenderResources::rhiDevice().createTexture(desc);
+		else
+			rhiTexture_->setSampler(desc.sampler);
+
+		width_ = texLoader.width();
+		height_ = texLoader.height();
+		mipMapLevels_ = texLoader.mipMapCount();
+		isCompressed_ = false;
+		format_ = formatToNc(format);
+		dataSize_ = dataSize;
+		return;
+	}
+#endif
+
 	const IGfxCapabilities &gfxCaps = theServiceLocator().gfxCapabilities();
 	const int maxTextureSize = gfxCaps.value(IGfxCapabilities::GLIntValues::MAX_TEXTURE_SIZE);
 	FATAL_ASSERT_MSG_X(texLoader.width() <= maxTextureSize, "Texture width %d is bigger than device maximum %d", texLoader.width(), maxTextureSize);
@@ -475,6 +619,29 @@ void Texture::initialize(const ITextureLoader &texLoader)
 
 void Texture::load(const ITextureLoader &texLoader)
 {
+	if (rhiTexture_)
+	{
+		const TextureFormat &texFormat = texLoader.texFormat();
+		unsigned int levelWidth = width_;
+		unsigned int levelHeight = height_;
+		nctl::UniquePtr<uint32_t[]> chromaPixels;
+		for (int mipIdx = 0; mipIdx < texLoader.mipMapCount(); mipIdx++)
+		{
+			const unsigned char *data = texLoader.pixels(mipIdx);
+			if (texFormat.format() == GL_RGB && isChromaKeyEnabled_)
+			{
+				const unsigned int numPixels = levelWidth * levelHeight;
+				chromaPixels = nctl::makeUnique<uint32_t[]>(numPixels);
+				chromaKeyPixels(chromaPixels.get(), data, numPixels, chromaKeyColor_);
+				data = reinterpret_cast<const unsigned char *>(chromaPixels.get());
+			}
+			rhiTexture_->upload(static_cast<unsigned int>(mipIdx), data);
+			levelWidth = (levelWidth > 1) ? levelWidth / 2 : 1;
+			levelHeight = (levelHeight > 1) ? levelHeight / 2 : 1;
+		}
+		return;
+	}
+
 #if (defined(WITH_OPENGLES) && GL_ES_VERSION_3_0) || defined(__EMSCRIPTEN__)
 	const bool withTexStorage = true;
 #else

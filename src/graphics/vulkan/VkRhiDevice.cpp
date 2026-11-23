@@ -283,6 +283,8 @@ VkRhiDevice::~VkRhiDevice()
 		vkDeviceWaitIdle(device_);
 		readbackBuffer_.reset(nullptr);
 		destroySwapchain();
+		vkDestroyFence(device_, transferFence_, nullptr);
+		vkDestroyCommandPool(device_, transferPool_, nullptr);
 		for (Frame &frame : frames_)
 		{
 			vkDestroySemaphore(device_, frame.imageAvailable, nullptr);
@@ -353,6 +355,17 @@ bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 		VkSemaphoreCreateInfo semaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 		VK_CHECK(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &frame.imageAvailable));
 	}
+
+	VkCommandPoolCreateInfo transferPoolInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+	transferPoolInfo.queueFamilyIndex = queueFamily_;
+	VK_CHECK(vkCreateCommandPool(device_, &transferPoolInfo, nullptr, &transferPool_));
+	VkCommandBufferAllocateInfo transferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	transferAllocateInfo.commandPool = transferPool_;
+	transferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	transferAllocateInfo.commandBufferCount = 1;
+	VK_CHECK(vkAllocateCommandBuffers(device_, &transferAllocateInfo, &transferCommandBuffer_));
+	VkFenceCreateInfo transferFenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+	VK_CHECK(vkCreateFence(device_, &transferFenceInfo, nullptr, &transferFence_));
 
 	return createSwapchain();
 }
@@ -796,10 +809,14 @@ nctl::UniquePtr<igfx::IBuffer> VkRhiDevice::createBuffer(const igfx::BufferDesc 
 	return nctl::move(buffer);
 }
 
-nctl::UniquePtr<igfx::ITexture> VkRhiDevice::createTexture(const igfx::TextureDesc &)
+nctl::UniquePtr<igfx::ITexture> VkRhiDevice::createTexture(const igfx::TextureDesc &desc)
 {
-	notImplemented("createTexture()");
-	return nctl::UniquePtr<igfx::ITexture>(nullptr);
+	nctl::UniquePtr<VkRhiTexture> texture = nctl::makeUnique<VkRhiTexture>(*this, desc);
+	if (texture->isValid() == false)
+		return nctl::UniquePtr<igfx::ITexture>(nullptr);
+	for (unsigned int level = 0; level < desc.mipLevels; level++)
+		texture->upload(level, nullptr);
+	return nctl::move(texture);
 }
 
 nctl::UniquePtr<igfx::IShaderProgram> VkRhiDevice::createShaderProgram(const char *vertexSource, const char *fragmentSource, const char *name)

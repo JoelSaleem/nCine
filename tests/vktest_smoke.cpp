@@ -1,9 +1,11 @@
-// Vulkan backend smoke test: clears the swapchain for a few frames, reads the last one back and checks
-// the pixel color and that the validation layer stayed silent. Exit code 0 means it works.
-//   vktest_clear [capture.png]
+// Vulkan backend smoke test: clears the swapchain for a few frames and reads the last one back, round-trips
+// textures of every format through upload and download, and checks the validation layer stayed silent.
+// Exit code 0 means it works.
+//   vktest_smoke [capture.png]
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <ncine/ServiceLocator.h>
@@ -56,12 +58,12 @@ int main(int argc, char **argv)
 
 	if (glfwInit() == GLFW_FALSE || glfwVulkanSupported() == GLFW_FALSE)
 	{
-		fprintf(stderr, "VKTEST_CLEAR FAIL: GLFW cannot use Vulkan\n");
+		fprintf(stderr, "VKTEST_SMOKE FAIL: GLFW cannot use Vulkan\n");
 		return 1;
 	}
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	GLFWwindow *window = glfwCreateWindow(Width, Height, "vktest_clear", nullptr, nullptr);
+	GLFWwindow *window = glfwCreateWindow(Width, Height, "vktest_smoke", nullptr, nullptr);
 
 	nc::VkSurfaceProvider provider;
 	provider.instanceExtensions = glfwGetRequiredInstanceExtensions(&provider.numInstanceExtensions);
@@ -76,7 +78,7 @@ int main(int argc, char **argv)
 		nc::VkRhiDevice device(provider);
 		if (device.isValid() == false)
 		{
-			fprintf(stderr, "VKTEST_CLEAR FAIL: device initialization\n");
+			fprintf(stderr, "VKTEST_SMOKE FAIL: device initialization\n");
 			return 1;
 		}
 
@@ -98,6 +100,34 @@ int main(int argc, char **argv)
 			device.endFrame();
 		}
 
+		// Odd sizes check row packing, two levels check mip addressing
+		bool texturesOk = true;
+		const nc::igfx::Format formats[] = { nc::igfx::Format::R8, nc::igfx::Format::RG8, nc::igfx::Format::RGB8, nc::igfx::Format::RGBA8 };
+		for (nc::igfx::Format format : formats)
+		{
+			nc::igfx::TextureDesc desc;
+			desc.width = 37;
+			desc.height = 21;
+			desc.format = format;
+			desc.mipLevels = 2;
+			nctl::UniquePtr<nc::igfx::ITexture> texture = device.createTexture(desc);
+			for (unsigned int level = 0; texture && level < desc.mipLevels; level++)
+			{
+				const unsigned int levelSize = (desc.width >> level) * (desc.height >> level) * nc::igfx::bytesPerPixel(format);
+				nctl::UniquePtr<unsigned char[]> uploaded = nctl::makeUnique<unsigned char[]>(levelSize);
+				nctl::UniquePtr<unsigned char[]> downloaded = nctl::makeUnique<unsigned char[]>(levelSize);
+				for (unsigned int i = 0; i < levelSize; i++)
+					uploaded[i] = static_cast<unsigned char>(i * 7 + level * 13 + static_cast<unsigned int>(format));
+				texture->upload(level, uploaded.get());
+				const bool same = texture->download(level, downloaded.get()) && memcmp(uploaded.get(), downloaded.get(), levelSize) == 0;
+				if (same == false)
+					printf("texture format %d level %u does not round-trip\n", static_cast<int>(format), level);
+				texturesOk = texturesOk && same;
+			}
+			texturesOk = texturesOk && (texture != nullptr);
+		}
+		printf("textures %s\n", texturesOk ? "round-trip" : "FAIL");
+
 		const unsigned char *center = pixels.get() + ((height / 2) * width + width / 2) * 3;
 		const bool colorOk = readback && center[0] == ExpectedRgb[0] && center[1] == ExpectedRgb[1] && center[2] == ExpectedRgb[2];
 		const unsigned int messages = device.validationMessageCount();
@@ -114,8 +144,8 @@ int main(int argc, char **argv)
 			nc::IImageSaver::save(properties, argv[1]);
 		}
 
-		result = (colorOk && messages == 0) ? 0 : 1;
-		printf("VKTEST_CLEAR %s\n", result == 0 ? "OK" : "FAIL");
+		result = (colorOk && texturesOk && device.validationMessageCount() == 0) ? 0 : 1;
+		printf("VKTEST_SMOKE %s\n", result == 0 ? "OK" : "FAIL");
 	}
 
 	glfwDestroyWindow(window);
