@@ -161,6 +161,8 @@ class RenderResources
 
 	static inline BinaryShaderCache &binaryShaderCache() { return *binaryShaderCache_; }
 	static inline RenderBuffersManager &buffersManager() { return *buffersManager_; }
+	/// False on Vulkan, which does not use the OpenGL buffer manager
+	static inline bool hasBuffersManager() { return buffersManager_ != nullptr; }
 	static inline RenderVaoPool &vaoPool() { return *vaoPool_; }
 	static inline const Hash64 &hash64() { return *hash64_; }
 #ifdef WITH_RHI

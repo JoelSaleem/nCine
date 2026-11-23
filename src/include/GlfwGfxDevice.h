@@ -11,6 +11,13 @@ struct GLFWvidmode;
 
 namespace ncine {
 
+#ifdef WITH_VULKAN
+namespace igfx {
+	class IDevice;
+}
+#endif
+
+
 /// The GLFW based graphics device
 class GlfwGfxDevice : public IGfxDevice
 {
@@ -82,6 +89,9 @@ class GlfwGfxDevice : public IGfxDevice
 	/// Callback for `glfwSetErrorCallback()`
 	static void errorCallback(int error, const char *description);
 
+#ifdef WITH_VULKAN
+	friend nctl::UniquePtr<igfx::IDevice> createGlfwVulkanDevice(); // creates the window surface
+#endif
 	friend class GlfwInputManager;
 	friend class GlfwMouseState;
 	friend class GlfwKeyboardState;

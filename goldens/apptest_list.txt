@@ -3,6 +3,7 @@ apptest_animsprites
 apptest_audio
 apptest_bunnymark
 apptest_camera
+apptest_clear
 apptest_clones
 apptest_filebrowser
 apptest_font

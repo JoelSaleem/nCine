@@ -58,6 +58,16 @@
 namespace ncine {
 
 namespace {
+	/// Vulkan mode skips every OpenGL-only subsystem (capabilities, debug output, ImGui, Nuklear, GL shaders)
+	inline bool usingVulkan()
+	{
+#ifdef WITH_RHI
+		return igfx::isVulkanSelected();
+#else
+		return false;
+#endif
+	}
+
 	static nctl::StaticString<256> appInfoString;
 	static FrameCapture::Config captureConfig;
 
@@ -318,8 +328,11 @@ void Application::initCommon()
 			theServiceLocator().registerJobSystem(nctl::makeUnique<JobSystem>(appCfg_.jobSystem.numThreads));
 	}
 #endif
-	theServiceLocator().registerGfxCapabilities(nctl::makeUnique<GfxCapabilities>());
-	GLDebug::init(theServiceLocator().gfxCapabilities());
+	if (usingVulkan() == false)
+	{
+		theServiceLocator().registerGfxCapabilities(nctl::makeUnique<GfxCapabilities>());
+		GLDebug::init(theServiceLocator().gfxCapabilities());
+	}
 
 #ifdef WITH_RENDERDOC
 	RenderDocCapture::init();
@@ -343,16 +356,19 @@ void Application::initCommon()
 	RenderResources::createMinimal(); // they are required for rendering even without a scenegraph
 
 #ifdef WITH_IMGUI
-	imguiDrawing_ = nctl::makeUnique<ImGuiDrawing>(appCfg_.features.scenegraph);
+	if (usingVulkan() == false)
+		imguiDrawing_ = nctl::makeUnique<ImGuiDrawing>(appCfg_.features.scenegraph);
 #endif
 #ifdef WITH_NUKLEAR
-	nuklearDrawing_ = nctl::makeUnique<NuklearDrawing>(appCfg_.features.scenegraph);
+	if (usingVulkan() == false)
+		nuklearDrawing_ = nctl::makeUnique<NuklearDrawing>(appCfg_.features.scenegraph);
 #endif
 
 #ifdef WITH_SCENEGRAPH
 	if (appCfg_.features.scenegraph)
 	{
-		gfxDevice_->setupGL();
+		if (usingVulkan() == false)
+			gfxDevice_->setupGL();
 		RenderResources::create();
 		rootNode_ = nctl::makeUnique<SceneNode>();
 		screenViewport_ = nctl::makeUnique<ScreenViewport>();
@@ -362,7 +378,7 @@ void Application::initCommon()
 
 #ifdef WITH_IMGUI
 	// Debug overlay is available even when scenegraph is not
-	if (appCfg_.features.debugOverlay)
+	if (appCfg_.features.debugOverlay && imguiDrawing_)
 		debugOverlay_ = nctl::makeUnique<ImGuiDebugOverlay>(appCfg_.profileTextUpdateTime);
 #endif
 
@@ -387,7 +403,8 @@ void Application::initCommon()
 	// ImGui fonts may now be added, removed, reconfigured at any time (since v1.92.0).
 	// Give user code a chance to add custom Nuklear fonts
 #ifdef WITH_NUKLEAR
-	nuklearDrawing_->bakeFonts();
+	if (nuklearDrawing_)
+		nuklearDrawing_->bakeFonts();
 #endif
 
 	// Swapping frame now for a cleaner API trace capture when debugging
@@ -410,7 +427,8 @@ void Application::step()
 	{
 		ZoneScopedN("ImGui newFrame");
 		profileStartTime_ = TimeStamp::now();
-		imguiDrawing_->newFrame();
+		if (imguiDrawing_)
+			imguiDrawing_->newFrame();
 		timings_[Timings::IMGUI] = profileStartTime_.secondsSince();
 	}
 #endif
@@ -419,7 +437,8 @@ void Application::step()
 	{
 		ZoneScopedN("Nuklear newFrame");
 		profileStartTime_ = TimeStamp::now();
-		nuklearDrawing_->newFrame();
+		if (nuklearDrawing_)
+			nuklearDrawing_->newFrame();
 		timings_[Timings::NUKLEAR] = profileStartTime_.secondsSince();
 	}
 #endif
@@ -478,7 +497,8 @@ void Application::step()
 			RenderQueue *imguiRenderQueue = (guiSettings_.imguiViewport) ?
 			            guiSettings_.imguiViewport->renderQueue_.get() :
 			            screenViewport_->renderQueue_.get();
-			imguiDrawing_->endFrame(*imguiRenderQueue);
+			if (imguiDrawing_)
+				imguiDrawing_->endFrame(*imguiRenderQueue);
 			timings_[Timings::IMGUI] += profileStartTime_.secondsSince();
 		}
 	#endif
@@ -490,7 +510,8 @@ void Application::step()
 			RenderQueue *nuklearRenderQueue = (guiSettings_.nuklearViewport) ?
 			            guiSettings_.nuklearViewport->renderQueue_.get() :
 			            screenViewport_->renderQueue_.get();
-			nuklearDrawing_->endFrame(*nuklearRenderQueue);
+			if (nuklearDrawing_)
+				nuklearDrawing_->endFrame(*nuklearRenderQueue);
 			timings_[Timings::NUKLEAR] += profileStartTime_.secondsSince();
 		}
 	#endif
@@ -510,7 +531,8 @@ void Application::step()
 		{
 			ZoneScopedN("ImGui endFrame");
 			profileStartTime_ = TimeStamp::now();
-			imguiDrawing_->endFrame();
+			if (imguiDrawing_)
+				imguiDrawing_->endFrame();
 			timings_[Timings::IMGUI] += profileStartTime_.secondsSince();
 		}
 #endif
@@ -519,7 +541,8 @@ void Application::step()
 		{
 			ZoneScopedN("Nuklear endFrame");
 			profileStartTime_ = TimeStamp::now();
-			nuklearDrawing_->endFrame();
+			if (nuklearDrawing_)
+				nuklearDrawing_->endFrame();
 			timings_[Timings::NUKLEAR] += profileStartTime_.secondsSince();
 		}
 #endif

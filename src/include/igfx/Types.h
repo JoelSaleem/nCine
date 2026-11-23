@@ -2,6 +2,8 @@
 #define NCINE_IGFX_TYPES
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <nctl/StaticArray.h>
 #include <nctl/String.h>
 #include "Rect.h"
@@ -16,6 +18,17 @@ enum class Backend
 	OPENGL,
 	VULKAN
 };
+
+/// `NCINE_GFX_BACKEND=vulkan` selects Vulkan at startup, in builds that have it
+inline bool isVulkanSelected()
+{
+#ifdef WITH_VULKAN
+	const char *backend = std::getenv("NCINE_GFX_BACKEND");
+	return (backend != nullptr && strcmp(backend, "vulkan") == 0);
+#else
+	return false;
+#endif
+}
 
 enum class Format
 {

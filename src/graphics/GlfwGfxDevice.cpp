@@ -16,7 +16,23 @@
 
 #define GLFW_VERSION_COMBINED (GLFW_VERSION_MAJOR * 1000 + GLFW_VERSION_MINOR * 100 + GLFW_VERSION_REVISION)
 
+#ifdef WITH_RHI
+	#include "igfx/Types.h"
+#endif
+
 namespace ncine {
+
+namespace {
+	inline bool igfxVulkan()
+	{
+#ifdef WITH_RHI
+		return igfx::isVulkanSelected();
+#else
+		return false;
+#endif
+	}
+}
+
 
 ///////////////////////////////////////////////////////////
 // STATIC DEFINITIONS
@@ -317,6 +333,8 @@ void GlfwGfxDevice::showWindow()
 
 void GlfwGfxDevice::swapBuffers()
 {
+	if (igfxVulkan())
+		return; // the Vulkan device presents in `endFrame()`
 	glfwSwapBuffers(windowHandle_);
 }
 
@@ -394,6 +412,8 @@ void GlfwGfxDevice::initDevice(const WindowMode &windowMode)
 	glfwWindowHint(GLFW_POSITION_Y, windowPosY);
 #endif
 
+	if (igfxVulkan())
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // a Vulkan surface needs a window without a GL context
 	windowHandle_ = glfwCreateWindow(width_, height_, "", monitor, nullptr);
 	FATAL_ASSERT_MSG(windowHandle_, "glfwCreateWindow() failed");
 
@@ -418,6 +438,8 @@ void GlfwGfxDevice::initDevice(const WindowMode &windowMode)
 #endif
 
 	glfwGetFramebufferSize(windowHandle_, &drawableWidth_, &drawableHeight_);
+	if (igfxVulkan())
+		return;
 	initGLViewport();
 
 	glfwMakeContextCurrent(windowHandle_);

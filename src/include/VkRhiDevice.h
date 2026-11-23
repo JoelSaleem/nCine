@@ -188,6 +188,9 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	friend class VkRhiCommandList;
 };
 
+/// Creates the Vulkan device for the GLFW window, validation on when `NCINE_VK_VALIDATION` is set
+nctl::UniquePtr<igfx::IDevice> createGlfwVulkanDevice();
+
 }
 
 #endif

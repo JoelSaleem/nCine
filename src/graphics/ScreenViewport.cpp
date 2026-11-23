@@ -89,7 +89,8 @@ void ScreenViewport::sortAndCommitQueue()
 	Viewport::sortAndCommitQueue();
 
 	// Now that UBOs and VBOs have been updated, they can be flushed and unmapped
-	RenderResources::buffersManager().flushUnmap();
+	if (RenderResources::hasBuffersManager()) // ponytail: none on Vulkan until its buffers land
+		RenderResources::buffersManager().flushUnmap();
 }
 
 void ScreenViewport::draw()
@@ -115,9 +116,12 @@ void ScreenViewport::draw()
 	if (clearMode_ == ClearMode::NEXT_FRAME_ONLY)
 		clearMode_ = ClearMode::THIS_FRAME_ONLY;
 
-	RenderResources::buffersManager().remap();
+	if (RenderResources::hasBuffersManager())
+	{
+		RenderResources::buffersManager().remap();
+		GLDebug::reset();
+	}
 	RenderResources::renderCommandPool().reset();
-	GLDebug::reset();
 }
 
 }

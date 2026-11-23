@@ -47,6 +47,10 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
+if [ "$BACKEND" = vulkan ]; then
+	export NCINE_GFX_BACKEND=vulkan NCINE_VK_VALIDATION=1
+fi
+
 apptests() {
 	if [ -n "$ONLY" ]; then tr ',' '\n' <<<"$ONLY"; else cat "$GOLDENS/apptest_list.txt"; fi
 }
@@ -107,6 +111,9 @@ case "$cmd" in
 			result=""
 			if [ ! -s "$GOLDENS/$a.png" ]; then echo "FAIL $a (no golden)"; rc=1; fail=$((fail + 1)); continue; fi
 			if nondeterministic "$a"; then echo "SKIP $a (nondeterministic)"; skip=$((skip + 1)); continue; fi
+			if [ "$BACKEND" = vulkan ] && capture "$a" "$FRAME" "$TMPD/$a.png" && grep -q "Vulkan validation" "$TMPD/$a.log"; then
+				echo "FAIL $a (Vulkan validation messages, first:)"; grep -m1 "Vulkan validation" "$TMPD/$a.log" | cut -c1-300; rc=1; fail=$((fail + 1)); continue
+			fi
 			if capture "$a" "$FRAME" "$TMPD/$a.png" &&
 				result=$("$PY" tools/img_diff.py "$GOLDENS/$a.png" "$TMPD/$a.png" --tol "$tol" --max-frac "$maxfrac" --diff-out "$TMPD/$a.diff.png"); then
 				echo "PASS $a"; pass=$((pass + 1))

@@ -12,6 +12,7 @@ if(NCINE_RHI)
 		list(APPEND SOURCES
 			${NCINE_ROOT}/src/graphics/vulkan/VkRhiDevice.cpp
 			${NCINE_ROOT}/src/graphics/vulkan/VkMemory.cpp
+			${NCINE_ROOT}/src/graphics/vulkan/VkGlfwSurface.cpp
 		)
 	endif()
 endif()

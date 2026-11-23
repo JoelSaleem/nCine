@@ -1,6 +1,9 @@
 #ifdef WITH_RHI
 	#include "GLRhiDevice.h"
 #endif
+#ifdef WITH_VULKAN
+	#include "VkRhiDevice.h"
+#endif
 #include <cstddef> // for `offsetof()`
 #include <nctl/HashMapIterator.h>
 #include <nctl/StaticString.h>
@@ -25,6 +28,18 @@
 #endif
 
 namespace ncine {
+
+namespace {
+	inline bool usingVulkan()
+	{
+#ifdef WITH_RHI
+		return igfx::isVulkanSelected();
+#else
+		return false;
+#endif
+	}
+}
+
 
 namespace {
 	char const * const BatchSizeFormatString = "#ifndef BATCH_SIZE\n\t#define BATCH_SIZE (%d)\n#endif\n#line 0\n";
@@ -488,11 +503,11 @@ void RenderResources::create()
 	// `create()` can be called after `createMinimal()`
 
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
-	if (binaryShaderCache_ == nullptr)
+	if (binaryShaderCache_ == nullptr && usingVulkan() == false)
 		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
-	if (buffersManager_ == nullptr)
+	if (buffersManager_ == nullptr && usingVulkan() == false)
 		buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
-	if (vaoPool_ == nullptr)
+	if (vaoPool_ == nullptr && usingVulkan() == false)
 		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
 	if (hash64_ == nullptr)
 		hash64_ = nctl::makeUnique<Hash64>();
@@ -500,6 +515,11 @@ void RenderResources::create()
 	renderBatcher_ = nctl::makeUnique<RenderBatcher>();
 	defaultCamera_ = nctl::makeUnique<Camera>();
 	currentCamera_ = defaultCamera_.get();
+	if (usingVulkan())
+	{
+		LOGI("Rendering resources created, without shader programs on Vulkan yet");
+		return;
+	}
 
 	fillDefaultShaderInfos();
 
@@ -638,12 +658,21 @@ void RenderResources::createMinimal()
 	ASSERT(hash64_ == nullptr);
 
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
-	binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
-	buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
-	vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
+	if (usingVulkan() == false)
+	{
+		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
+		buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
+		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
+	}
 	hash64_ = nctl::makeUnique<Hash64>();
 #ifdef WITH_RHI
-	rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
+	#ifdef WITH_VULKAN
+	// ponytail: no OpenGL resource managers on Vulkan, its buffers and shaders come in the next parts of Task 1.4
+	if (usingVulkan())
+		rhiDevice_ = createGlfwVulkanDevice();
+	else
+	#endif
+		rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
 #endif
 
 	LOGI("Minimal rendering resources created");
