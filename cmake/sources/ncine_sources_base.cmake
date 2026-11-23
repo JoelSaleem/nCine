@@ -30,6 +30,7 @@ list(APPEND HEADERS
 	${NCINE_ROOT}/include/ncine/TimeStamp.h
 	${NCINE_ROOT}/include/ncine/Timer.h
 	${NCINE_ROOT}/include/ncine/IFrameTimer.h
+	${NCINE_ROOT}/include/ncine/FrameCapture.h
 	${NCINE_ROOT}/include/ncine/FileSystem.h
 	${NCINE_ROOT}/include/ncine/IFile.h
 	${NCINE_ROOT}/include/ncine/IGfxDevice.h
@@ -67,6 +68,7 @@ list(APPEND SOURCES
 	${NCINE_ROOT}/src/TimeStamp.cpp
 	${NCINE_ROOT}/src/Timer.cpp
 	${NCINE_ROOT}/src/FrameTimer.cpp
+	${NCINE_ROOT}/src/FrameCapture.cpp
 	${NCINE_ROOT}/src/FileSystem.cpp
 	${NCINE_ROOT}/src/IFile.cpp
 	${NCINE_ROOT}/src/MemoryFile.cpp

@@ -8,6 +8,8 @@
 #include "GLDebug.h"
 #include "Timer.h" // for `sleep()`
 #include "FrameTimer.h"
+#include "FrameCapture.h"
+#include "IImageSaver.h"
 #include <nctl/StaticString.h>
 
 #ifdef WITH_ALLOCATORS
@@ -55,6 +57,26 @@ namespace ncine {
 
 namespace {
 	static nctl::StaticString<256> appInfoString;
+	static FrameCapture::Config captureConfig;
+
+#ifdef WITH_SCENEGRAPH
+	bool saveCapture(const Viewport &viewport, const char *path)
+	{
+		const int width = viewport.width();
+		const int height = viewport.height();
+		nctl::UniquePtr<unsigned char[]> pixels = nctl::makeUnique<unsigned char[]>(width * height * 3);
+		if (viewport.savePixels(pixels.get()) == false)
+			return false;
+
+		IImageSaver::Properties properties;
+		properties.width = width;
+		properties.height = height;
+		properties.format = IImageSaver::Format::RGB8;
+		properties.verticalFlip = true; // `glReadPixels()` rows are bottom-up
+		properties.pixels = pixels.get();
+		return IImageSaver::save(properties, path);
+	}
+#endif
 
 	void logInitInformation()
 	{
@@ -293,6 +315,9 @@ void Application::initCommon()
 	TracyGpuCollect;
 
 	frameTimer_ = nctl::makeUnique<FrameTimer>(appCfg_.profileTextUpdateTime, appCfg_.logging.frameTimerInterval);
+	captureConfig = FrameCapture::fromEnv();
+	if (captureConfig.enabled)
+		frameTimer_->setFixedFrameTime(FrameCapture::FixedFrameTime);
 
 	// Create a minimal set of render resources before compiling the first shader
 	RenderResources::createMinimal(); // they are required for rendering even without a scenegraph
@@ -322,7 +347,10 @@ void Application::initCommon()
 #endif
 
 	// Initialization of the static random generator seeds
-	random().init(static_cast<uint64_t>(TimeStamp::now().ticks()), static_cast<uint64_t>(profileStartTime_.ticks()));
+	if (captureConfig.enabled)
+		random() = Random(); // default seeds, so captures are reproducible
+	else
+		random().init(static_cast<uint64_t>(TimeStamp::now().ticks()), static_cast<uint64_t>(profileStartTime_.ticks()));
 
 	LOGI("Application initialized");
 
@@ -490,6 +518,19 @@ void Application::step()
 #ifdef WITH_JOBSYSTEM
 	if (theServiceLocator().jobSystem().numThreads() > 1)
 		theServiceLocator().logger().consumeQueue();
+#endif
+
+#ifdef WITH_SCENEGRAPH
+	// Read back before swapping, while the back buffer still holds this frame
+	if (captureConfig.enabled && frameTimer_->totalNumberFrames() == captureConfig.targetFrame)
+	{
+		if (screenViewport_ == nullptr || saveCapture(*screenViewport_, captureConfig.path) == false)
+			LOGE_X("Cannot save frame capture to \"%s\"", captureConfig.path);
+		else
+			LOGI_X("Frame %u captured to \"%s\"", captureConfig.targetFrame, captureConfig.path);
+		if (captureConfig.quitAfter)
+			quit();
+	}
 #endif
 
 	gfxDevice_->update();

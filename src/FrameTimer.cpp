@@ -100,7 +100,7 @@ void FrameTimer::setLogLevel(ILogger::LogLevel logLevel)
 
 void FrameTimer::addFrame()
 {
-	frameTime_ = frameStart_.secondsSince();
+	frameTime_ = (fixedFrameTime_ > 0.0f) ? fixedFrameTime_ : frameStart_.secondsSince();
 
 	// Start counting for the next frame time
 	frameStart_ = TimeStamp::now();

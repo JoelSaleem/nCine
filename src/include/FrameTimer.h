@@ -37,6 +37,8 @@ class FrameTimer : public IFrameTimer
 
 	/// Adds a frame to the counter and calculates the interval since the previous one
 	void addFrame();
+	/// Makes `lastFrameTime()` always return the given value, zero restores measured times
+	inline void setFixedFrameTime(float seconds) { fixedFrameTime_ = seconds; }
 
 	/// Starts counting the suspension time
 	void suspend();
@@ -54,6 +56,8 @@ class FrameTimer : public IFrameTimer
 	TimeStamp frameStart_;
 	/// Last frame time in seconds
 	float frameTime_;
+	/// Frame time returned instead of the measured one when greater than zero
+	float fixedFrameTime_ = 0.0f;
 	/// Timestamp at the begininng of application suspension
 	TimeStamp suspensionStart_;
 
