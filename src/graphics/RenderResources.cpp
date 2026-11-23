@@ -531,7 +531,7 @@ void RenderResources::create()
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
 	if (binaryShaderCache_ == nullptr && usingVulkan() == false)
 		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
-	if (buffersManager_ == nullptr && usingVulkan() == false)
+	if (buffersManager_ == nullptr)
 		buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
 	if (vaoPool_ == nullptr && usingVulkan() == false)
 		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
@@ -711,7 +711,6 @@ void RenderResources::createMinimal()
 	if (usingVulkan() == false)
 	{
 		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
-		buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
 		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
 	}
 	hash64_ = nctl::makeUnique<Hash64>();
@@ -724,6 +723,8 @@ void RenderResources::createMinimal()
 	#endif
 		rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
 #endif
+	// After the device, as the Vulkan buffers come from it
+	buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
 
 	LOGI("Minimal rendering resources created");
 }

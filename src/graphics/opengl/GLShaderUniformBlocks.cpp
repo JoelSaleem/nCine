@@ -101,13 +101,13 @@ GLUniformBlockCache *GLShaderUniformBlocks::uniformBlock(const char *name)
 #ifdef WITH_RHI
 void GLShaderUniformBlocks::bind(igfx::ICommandList &commandList)
 {
-	if (uboParams_.object == nullptr)
+	if (uboParams_.rhiObject == nullptr)
 		return;
 
 	unsigned long moreOffset = 0;
 	for (GLUniformBlockCache &uniformBlockCache : uniformBlockCaches_)
 	{
-		commandList.bindUniformBuffer(static_cast<int>(uniformBlockCache.index()), *uboParams_.object, uboParams_.offset + moreOffset, uniformBlockCache.usedSize());
+		commandList.bindUniformBuffer(static_cast<int>(uniformBlockCache.index()), *uboParams_.rhiObject, uboParams_.offset + moreOffset, uniformBlockCache.usedSize());
 		moreOffset += uniformBlockCache.usedSize();
 	}
 }

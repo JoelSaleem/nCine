@@ -75,10 +75,10 @@ void RenderCommand::issue()
 	unsigned int vertexFormatOffset = 0;
 	if (numInstances_ > 0)
 		vertexFormatOffset = geometry_.vboParams().offset + (geometry_.firstVertex_ * geometry_.numElementsPerVertex_ * sizeof(GLfloat));
-	if (geometry_.vboParams().object)
-		commandList.bindVertexBuffer(*geometry_.vboParams().object, vertexFormatOffset);
-	if (geometry_.iboParams().object)
-		commandList.bindIndexBuffer(*geometry_.iboParams().object, geometry_.iboParams().offset, igfx::IndexType::UINT16);
+	if (geometry_.vboParams().rhiObject)
+		commandList.bindVertexBuffer(*geometry_.vboParams().rhiObject, vertexFormatOffset);
+	if (geometry_.iboParams().rhiObject)
+		commandList.bindIndexBuffer(*geometry_.iboParams().rhiObject, geometry_.iboParams().offset, igfx::IndexType::UINT16);
 
 	const unsigned int firstVertex = static_cast<unsigned int>(geometry_.vboParams().offset / geometry_.numElementsPerVertex_ / sizeof(GLfloat)) + geometry_.firstVertex_;
 	if (geometry_.numIndices_ > 0)
