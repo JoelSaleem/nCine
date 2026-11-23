@@ -1,1 +1,2 @@
+apptest_audio
 apptest_filebrowser
