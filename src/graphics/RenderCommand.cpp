@@ -53,7 +53,7 @@ void RenderCommand::issue()
 		return;
 
 	igfx::PipelineDesc pipelineDesc;
-	pipelineDesc.program = material_.shaderProgram_;
+	pipelineDesc.program = &material_.shaderProgram_->rhiProgram();
 	pipelineDesc.topology = topologyFromGL(geometry_.primitiveType_);
 	pipelineDesc.blend.enabled = material_.isBlendingEnabled();
 	pipelineDesc.blend.srcFactor = blendFactorFromGL(material_.srcBlendingFactor());

@@ -755,6 +755,7 @@ void RenderResources::dispose()
 	rhiPipelines_.clear();
 	rhiPipelineStorage_.clear();
 	rhiCommandList_ = nullptr;
+	buffersManager_.reset(nullptr); // Vulkan buffers must go before the device that allocated them
 	rhiDevice_.reset(nullptr);
 #endif
 	hash64_.reset(nullptr);

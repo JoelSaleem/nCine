@@ -11,7 +11,7 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 | Audio | `ALSOFT_DRIVERS=null` (no sound card; opening ALSA is fatal in `ALAudioDevice`) |
 | Compiler | gcc-toolset-15 (GCC 15.2.1); system GCC 11 lacks `__is_convertible` used by `nctl/type_traits.h` |
 | GOLDEN_TOLERANCE_VK | 2 (per channel, /255) |
-| GOLDEN_MAX_FRAC | 0.005 |
+| GOLDEN_MAX_FRAC | 0.0001 (0.005 let a missing sprite pass, caught by mutation test) |
 | PERF_THRESHOLD_PCT | 10, advisory (software rendering timings are noise) |
 
 ## Plan corrections found in Task 0.2

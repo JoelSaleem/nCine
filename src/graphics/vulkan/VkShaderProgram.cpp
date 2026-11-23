@@ -40,6 +40,31 @@ namespace {
 		}
 	}
 
+	/// Bytes a loose uniform takes in the std140 default block (matrices have vec4 columns)
+	unsigned int std140Size(igfx::UniformType type)
+	{
+		switch (type)
+		{
+			case igfx::UniformType::FLOAT:
+			case igfx::UniformType::INT:
+			case igfx::UniformType::UINT:
+			case igfx::UniformType::BOOL: return 4;
+			case igfx::UniformType::FLOAT_VEC2:
+			case igfx::UniformType::INT_VEC2:
+			case igfx::UniformType::UINT_VEC2: return 8;
+			case igfx::UniformType::FLOAT_VEC3:
+			case igfx::UniformType::INT_VEC3:
+			case igfx::UniformType::UINT_VEC3: return 12;
+			case igfx::UniformType::FLOAT_VEC4:
+			case igfx::UniformType::INT_VEC4:
+			case igfx::UniformType::UINT_VEC4: return 16;
+			case igfx::UniformType::FLOAT_MAT2: return 32;
+			case igfx::UniformType::FLOAT_MAT3: return 48;
+			case igfx::UniformType::FLOAT_MAT4: return 64;
+			default: return 0;
+		}
+	}
+
 	/// Block members can be reported as `Block.member`, the renderer looks them up by member name
 	const char *memberName(const char *name)
 	{
@@ -67,9 +92,62 @@ namespace {
 		shader.setEnvInputVulkanRulesRelaxed();
 		shader.setGlobalUniformBlockName(DefaultBlockName);
 		shader.setGlobalUniformSet(0);
-		shader.setGlobalUniformBinding(0);
+		shader.setGlobalUniformBinding(0); // reassigned by `remapBindings()`
 		shader.setAutoMapBindings(true);
 		shader.setAutoMapLocations(true);
+	}
+
+	const int FirstSamplerBinding = 8;
+	const int DefaultBlockBinding = VkRhiPipeline::MaxBindings - 1;
+
+	struct BindingName
+	{
+		const char *name;
+		int binding;
+	};
+
+	/// Relaxed rules number bindings per stage, so stages collide; this rewrites every `Binding` decoration
+	/// by resource name (the variable's, or its block type's for unnamed block instances)
+	void remapBindings(std::vector<unsigned int> &spirv, const BindingName *bindings, unsigned int numBindings)
+	{
+		const unsigned int OpName = 5, OpTypePointer = 32, OpVariable = 59, OpDecorate = 71, DecorationBinding = 33;
+		const unsigned int bound = spirv[3];
+		std::vector<const char *> names(bound, nullptr);
+		std::vector<unsigned int> pointee(bound, 0), variableType(bound, 0), bindingWord(bound, 0);
+
+		for (size_t i = 5; i < spirv.size();)
+		{
+			const unsigned int numWords = spirv[i] >> 16;
+			const unsigned int opcode = spirv[i] & 0xFFFF;
+			if (numWords == 0)
+				break;
+			if (opcode == OpName && spirv[i + 1] < bound)
+				names[spirv[i + 1]] = reinterpret_cast<const char *>(&spirv[i + 2]);
+			else if (opcode == OpTypePointer && spirv[i + 1] < bound)
+				pointee[spirv[i + 1]] = spirv[i + 3];
+			else if (opcode == OpVariable && spirv[i + 2] < bound)
+				variableType[spirv[i + 2]] = spirv[i + 1];
+			else if (opcode == OpDecorate && spirv[i + 2] == DecorationBinding && spirv[i + 1] < bound)
+				bindingWord[spirv[i + 1]] = static_cast<unsigned int>(i + 3);
+			i += numWords;
+		}
+
+		for (unsigned int id = 0; id < bound; id++)
+		{
+			if (bindingWord[id] == 0)
+				continue;
+			const char *name = (names[id] && names[id][0] != '\0') ? names[id] : nullptr;
+			if (name == nullptr && variableType[id] < bound && pointee[variableType[id]] < bound)
+				name = names[pointee[variableType[id]]];
+			for (unsigned int b = 0; name && b < numBindings; b++)
+			{
+				if (strcmp(name, bindings[b].name) == 0)
+				{
+					spirv[bindingWord[id]] = static_cast<unsigned int>(bindings[b].binding);
+					break;
+				}
+			}
+		}
 	}
 
 	VkShaderModule createModule(VkDevice device, const std::vector<unsigned int> &spirv)
@@ -122,15 +200,6 @@ VkRhiShaderProgram::VkRhiShaderProgram(VkDevice device, const char *vertexSource
 	std::vector<unsigned int> fragmentSpirv;
 	glslang::GlslangToSpv(*program.getIntermediate(EShLangVertex), vertexSpirv);
 	glslang::GlslangToSpv(*program.getIntermediate(EShLangFragment), fragmentSpirv);
-	vertexModule_ = createModule(device_, vertexSpirv);
-	fragmentModule_ = createModule(device_, fragmentSpirv);
-	if (vertexModule_ == VK_NULL_HANDLE || fragmentModule_ == VK_NULL_HANDLE)
-	{
-		status_ = Status::LINKING_FAILED;
-		infoLog_ = "vkCreateShaderModule() failed";
-		LOGE_X("Shader program \"%s\": %s", name ? name : "", infoLog_.data());
-		return;
-	}
 
 	// Blocks other than the default one keep their index among the reflected blocks
 	int defaultBlock = -1;
@@ -196,7 +265,67 @@ VkRhiShaderProgram::VkRhiShaderProgram(VkDevice device, const char *vertexSource
 		attributes_.pushBack(info);
 	}
 
+	for (const igfx::UniformInfo &uniform : uniforms_)
+	{
+		if (uniform.blockIndex != -1 || uniform.offset < 0)
+			break;
+		numLooseUniforms_++;
+	}
+
+	// Unique bindings across stages: uniform blocks from zero, samplers from `FirstSamplerBinding`, default block last
+	nctl::StaticArray<BindingName, VkRhiPipeline::MaxBindings> bindings;
+	if (looseUniformsBinding_ >= 0)
+	{
+		looseUniformsBinding_ = DefaultBlockBinding;
+		bindings.pushBack({ DefaultBlockName, DefaultBlockBinding });
+	}
+	for (unsigned int i = 0; i < uniformBlocks_.size() && static_cast<int>(i) < FirstSamplerBinding; i++)
+	{
+		uniformBlocks_[i].binding = static_cast<int>(i);
+		bindings.pushBack({ uniformBlocks_[i].name.data(), static_cast<int>(i) });
+	}
+	int samplerBinding = FirstSamplerBinding;
+	for (igfx::UniformInfo &uniform : uniforms_)
+	{
+		if (uniform.type == igfx::UniformType::SAMPLER_2D && samplerBinding < DefaultBlockBinding)
+		{
+			uniform.binding = samplerBinding++;
+			bindings.pushBack({ uniform.name.data(), uniform.binding });
+		}
+	}
+	remapBindings(vertexSpirv, bindings.data(), bindings.size());
+	remapBindings(fragmentSpirv, bindings.data(), bindings.size());
+
+	vertexModule_ = createModule(device_, vertexSpirv);
+	fragmentModule_ = createModule(device_, fragmentSpirv);
+	if (vertexModule_ == VK_NULL_HANDLE || fragmentModule_ == VK_NULL_HANDLE)
+	{
+		status_ = Status::LINKING_FAILED;
+		infoLog_ = "vkCreateShaderModule() failed";
+		LOGE_X("Shader program \"%s\": %s", name ? name : "", infoLog_.data());
+		return;
+	}
+	if (looseUniformsSize_ > 0)
+		looseStorage_ = nctl::makeUnique<uint8_t[]>(static_cast<unsigned long>(looseUniformsSize_));
+
 	status_ = Status::LINKED;
+}
+
+// ponytail: copies the std140 size of each uniform, matching the renderer's packed values for scalars, vectors
+// and mat4, which are all the default shaders use; mat2/mat3 and arrays need column/element padding
+void VkRhiShaderProgram::writeLooseUniforms(const uint8_t *data, uint32_t writeMask)
+{
+	if (looseStorage_ == nullptr || data == nullptr)
+		return;
+	for (unsigned int i = 0; i < numLooseUniforms_ && i < 32; i++)
+	{
+		if (((writeMask >> i) & 1u) == 0)
+			continue;
+		const igfx::UniformInfo &uniform = uniforms_[i];
+		const unsigned int size = std140Size(uniform.type);
+		if (size > 0 && uniform.offset + static_cast<int>(size) <= looseUniformsSize_)
+			memcpy(looseStorage_.get() + uniform.offset, data + uniform.offset, size);
+	}
 }
 
 VkRhiShaderProgram::~VkRhiShaderProgram()

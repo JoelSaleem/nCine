@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 GOLDENS=goldens
 FRAME="${NCINE_CAPTURE_FRAME:-30}" # 0.5 s of virtual time: animations and emitters have progressed
 TOL_VK="${GOLDEN_TOLERANCE_VK:-2}"
-MAXFRAC="${GOLDEN_MAX_FRAC:-0.005}"
+MAXFRAC="${GOLDEN_MAX_FRAC:-0.0001}" # 0.01%: a 0.5% budget let a missing small sprite pass
 PCT="${PERF_THRESHOLD_PCT:-10}"
 RUN_TIMEOUT="${RUN_TIMEOUT:-60}"
 ADVISORY="${PERF_ADVISORY:-}"

@@ -49,6 +49,11 @@ Material::Material(GLShaderProgram *program, GLTexture *texture)
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 		textures_[i] = nullptr;
 	textures_[0] = texture;
+#ifdef WITH_RHI
+	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
+		rhiTextures_[i] = nullptr;
+	rhiTextures_[0] = texture;
+#endif
 
 	if (program)
 		setShaderProgram(program);
@@ -144,6 +149,9 @@ bool Material::setTexture(unsigned int unit, const GLTexture *texture)
 	if (unit < GLTexture::MaxTextureUnits)
 	{
 		textures_[unit] = texture;
+#ifdef WITH_RHI
+		rhiTextures_[unit] = texture;
+#endif
 		result = true;
 	}
 	return result;
@@ -151,8 +159,26 @@ bool Material::setTexture(unsigned int unit, const GLTexture *texture)
 
 bool Material::setTexture(unsigned int unit, const Texture &texture)
 {
+#ifdef WITH_RHI
+	if (texture.rhiTexture_)
+	{
+		const bool result = setTexture(unit, static_cast<const GLTexture *>(nullptr));
+		setRhiTexture(unit, texture.rhiTexture_.get());
+		return result;
+	}
+#endif
 	return setTexture(unit, texture.glTexture_.get());
 }
+
+#ifdef WITH_RHI
+bool Material::setRhiTexture(unsigned int unit, const igfx::ITexture *texture)
+{
+	if (unit >= GLTexture::MaxTextureUnits)
+		return false;
+	rhiTextures_[unit] = texture;
+	return true;
+}
+#endif
 
 ///////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
@@ -179,7 +205,7 @@ void Material::bind()
 void Material::bind(igfx::ICommandList &commandList)
 {
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
-		commandList.bindTexture(static_cast<int>(i), textures_[i]);
+		commandList.bindTexture(static_cast<int>(i), rhiTextures_[i]);
 
 	if (shaderProgram_)
 		shaderUniformBlocks_.bind(commandList);

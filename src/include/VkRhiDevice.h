@@ -3,6 +3,8 @@
 
 #include <vulkan/vulkan.h>
 #include <nctl/Array.h>
+#include <nctl/StaticArray.h>
+#include <nctl/UniquePtr.h>
 #include "common_defines.h"
 #include "igfx/IDevice.h"
 
@@ -71,6 +73,10 @@ class VkRhiShaderProgram : public igfx::IShaderProgram
 	inline VkShaderModule vertexModule() const { return vertexModule_; }
 	inline VkShaderModule fragmentModule() const { return fragmentModule_; }
 
+	/// Loose uniform values persist per program, as with OpenGL; masked ones take their value from `data`
+	void writeLooseUniforms(const uint8_t *data, uint32_t writeMask);
+	inline const uint8_t *looseUniformsStorage() const { return looseStorage_.get(); }
+
   private:
 	VkDevice device_;
 	Status status_ = Status::NOT_COMPILED;
@@ -82,6 +88,35 @@ class VkRhiShaderProgram : public igfx::IShaderProgram
 	int looseUniformsBinding_ = -1;
 	VkShaderModule vertexModule_ = VK_NULL_HANDLE;
 	VkShaderModule fragmentModule_ = VK_NULL_HANDLE;
+	nctl::UniquePtr<uint8_t[]> looseStorage_;
+	unsigned int numLooseUniforms_ = 0;
+};
+
+/// A graphics pipeline for dynamic rendering, with a push descriptor set layout from the program reflection
+class VkRhiPipeline : public igfx::IPipeline
+{
+  public:
+	static const unsigned int MaxBindings = 16;
+
+	VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc);
+	~VkRhiPipeline() override;
+
+	inline bool isValid() const { return pipeline_ != VK_NULL_HANDLE; }
+	const igfx::PipelineDesc &desc() const override { return desc_; }
+
+  private:
+	VkRhiDevice &device_;
+	igfx::PipelineDesc desc_;
+	VkRhiShaderProgram *program_ = nullptr;
+	VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
+	VkPipelineLayout layout_ = VK_NULL_HANDLE;
+	VkPipeline pipeline_ = VK_NULL_HANDLE;
+	int looseBinding_ = -1;
+	nctl::StaticArray<int, MaxBindings> blockBindings_;
+	/// Sampler `k` reads texture unit `k`
+	nctl::StaticArray<int, MaxBindings> samplerBindings_;
+
+	friend class VkRhiCommandList;
 };
 
 /// Sampled 2D image; RGB8 is stored as RGBA8, as Vulkan does not guarantee three-channel sampled formats
@@ -145,11 +180,26 @@ class VkRhiCommandList : public igfx::ICommandList
 	void drawIndexed(unsigned int indexCount, unsigned int instanceCount, unsigned int firstIndex, int vertexOffset) override;
 
   private:
+	static const unsigned int MaxTextureUnits = 4;
+
+	struct UniformBufferBinding
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceSize offset = 0;
+		VkDeviceSize range = 0;
+	};
+
 	VkRhiDevice &device_;
 	VkCommandBuffer commandBuffer_ = VK_NULL_HANDLE;
 	bool insideRenderPass_ = false;
 	Recti viewport_;
 	Recti scissor_;
+	VkRhiPipeline *pipeline_ = nullptr;
+	UniformBufferBinding uniformBuffers_[VkRhiPipeline::MaxBindings];
+	const VkRhiTexture *textures_[MaxTextureUnits] = {};
+
+	/// Pushes the descriptors of the bound pipeline: loose uniforms, uniform blocks and textures
+	void pushDescriptors();
 
 	friend class VkRhiDevice;
 };
@@ -255,6 +305,13 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	VkRhiCommandList commandList_;
 
 	nctl::UniquePtr<VkRhiBuffer> readbackBuffer_;
+	/// Transient uniform data (loose uniforms) of each frame in flight
+	static const unsigned long FrameUniformsSize = 1024 * 1024;
+	nctl::UniquePtr<VkRhiBuffer> frameUniforms_[FramesInFlight];
+	unsigned long frameUniformsOffset_ = 0;
+	/// Bound for texture units a material leaves empty
+	nctl::UniquePtr<VkRhiTexture> dummyTexture_;
+	PFN_vkCmdPushDescriptorSetKHR pushDescriptorSet_ = nullptr;
 	/// One-off transfers (texture uploads and downloads) outside the frames in flight
 	VkCommandPool transferPool_ = VK_NULL_HANDLE;
 	VkCommandBuffer transferCommandBuffer_ = VK_NULL_HANDLE;
@@ -277,6 +334,7 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 
 	friend class VkRhiCommandList;
 	friend class VkRhiTexture;
+	friend class VkRhiPipeline;
 };
 
 /// Creates the Vulkan device for the GLFW window, validation on when `NCINE_VK_VALIDATION` is set

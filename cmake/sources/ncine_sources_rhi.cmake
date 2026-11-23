@@ -16,6 +16,7 @@ if(NCINE_RHI)
 			${NCINE_ROOT}/src/graphics/vulkan/VkGlfwSurface.cpp
 			${NCINE_ROOT}/src/graphics/vulkan/VkShaderProgram.cpp
 			${NCINE_ROOT}/src/graphics/vulkan/VkTexture.cpp
+			${NCINE_ROOT}/src/graphics/vulkan/VkPipeline.cpp
 		)
 	endif()
 endif()

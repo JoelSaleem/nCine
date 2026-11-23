@@ -134,6 +134,11 @@ class Material
 	inline const GLTexture *texture() const { return texture(0); }
 	inline bool setTexture(const GLTexture *texture) { return setTexture(0, texture); }
 	inline bool setTexture(const Texture &texture) { return setTexture(0, texture); }
+#ifdef WITH_RHI
+	/// The textures as the render hardware interface sees them, the GL ones on OpenGL
+	inline const igfx::ITexture *rhiTexture(unsigned int unit) const { return (unit < GLTexture::MaxTextureUnits) ? rhiTextures_[unit] : nullptr; }
+	bool setRhiTexture(unsigned int unit, const igfx::ITexture *texture);
+#endif
 
   private:
 	bool isBlendingEnabled_;
@@ -145,6 +150,9 @@ class Material
 	GLShaderUniforms shaderUniforms_;
 	GLShaderUniformBlocks shaderUniformBlocks_;
 	const GLTexture *textures_[GLTexture::MaxTextureUnits];
+#ifdef WITH_RHI
+	const igfx::ITexture *rhiTextures_[GLTexture::MaxTextureUnits];
+#endif
 
 	/// The size of the memory buffer containing uniform values
 	unsigned int uniformsHostBufferSize_;

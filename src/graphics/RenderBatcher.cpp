@@ -407,7 +407,12 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 	}
 
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
+	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
+#ifdef WITH_RHI
+		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
+#endif
+	}
 	batchCommand->material().setBlendingEnabled(refCommand->material().isBlendingEnabled());
 	batchCommand->material().setBlendingFactors(refCommand->material().srcBlendingFactor(), refCommand->material().destBlendingFactor());
 	batchCommand->setBatchSize(nextStart - start);
@@ -567,7 +572,12 @@ RenderCommand *RenderBatcher::collectCommandsWithInstancing(
 	}
 
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
+	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
+#ifdef WITH_RHI
+		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
+#endif
+	}
 	batchCommand->material().setBlendingEnabled(refCommand->material().isBlendingEnabled());
 	batchCommand->material().setBlendingFactors(refCommand->material().srcBlendingFactor(), refCommand->material().destBlendingFactor());
 	batchCommand->setBatchSize(nextStart - start);

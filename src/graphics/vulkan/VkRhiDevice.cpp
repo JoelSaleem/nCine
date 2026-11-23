@@ -222,9 +222,11 @@ void VkRhiCommandList::setScissor(const Recti &rect)
 	vkCmdSetScissor(commandBuffer_, 0, 1, &scissor);
 }
 
-void VkRhiCommandList::bindPipeline(igfx::IPipeline &)
+void VkRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)
 {
-	notImplemented("bindPipeline()");
+	pipeline_ = &static_cast<VkRhiPipeline &>(pipeline);
+	if (pipeline_->isValid())
+		vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->pipeline_);
 }
 
 void VkRhiCommandList::bindVertexBuffer(igfx::IBuffer &buffer, unsigned long offset)
@@ -240,28 +242,99 @@ void VkRhiCommandList::bindIndexBuffer(igfx::IBuffer &buffer, unsigned long offs
 	                     type == igfx::IndexType::UINT16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
 }
 
-void VkRhiCommandList::bindUniformBuffer(int, igfx::IBuffer &, unsigned long, unsigned long)
+void VkRhiCommandList::bindUniformBuffer(int binding, igfx::IBuffer &buffer, unsigned long offset, unsigned long size)
 {
-	notImplemented("bindUniformBuffer()");
+	if (binding < 0 || binding >= static_cast<int>(VkRhiPipeline::MaxBindings))
+		return;
+	uniformBuffers_[binding].buffer = static_cast<VkRhiBuffer &>(buffer).handle();
+	uniformBuffers_[binding].offset = offset;
+	uniformBuffers_[binding].range = size;
 }
 
-void VkRhiCommandList::bindTexture(int, const igfx::ITexture *)
+void VkRhiCommandList::bindTexture(int binding, const igfx::ITexture *texture)
 {
-	notImplemented("bindTexture()");
+	if (binding >= 0 && binding < static_cast<int>(MaxTextureUnits))
+		textures_[binding] = static_cast<const VkRhiTexture *>(texture);
 }
 
-void VkRhiCommandList::setLooseUniforms(const void *, uint32_t)
+void VkRhiCommandList::setLooseUniforms(const void *data, uint32_t writeMask)
 {
-	notImplemented("setLooseUniforms()");
+	if (pipeline_ && pipeline_->program_)
+		pipeline_->program_->writeLooseUniforms(static_cast<const uint8_t *>(data), writeMask);
+}
+
+void VkRhiCommandList::pushDescriptors()
+{
+	VkWriteDescriptorSet writes[VkRhiPipeline::MaxBindings];
+	VkDescriptorBufferInfo bufferInfos[VkRhiPipeline::MaxBindings];
+	VkDescriptorImageInfo imageInfos[VkRhiPipeline::MaxBindings];
+	uint32_t numWrites = 0;
+	unsigned int numBuffers = 0;
+	unsigned int numImages = 0;
+
+	if (pipeline_->looseBinding_ >= 0)
+	{
+		// The program's current loose values, copied into this frame's transient uniform buffer
+		const unsigned long size = static_cast<unsigned long>(pipeline_->program_->looseUniformsSize());
+		const unsigned long alignment = static_cast<unsigned long>(device_.limits_.uniformBufferOffsetAlignment);
+		const unsigned long offset = (device_.frameUniformsOffset_ + alignment - 1) / alignment * alignment;
+		FATAL_ASSERT_MSG(offset + size <= VkRhiDevice::FrameUniformsSize, "Out of transient uniform memory for this frame");
+		VkRhiBuffer &frameUniforms = *device_.frameUniforms_[device_.frameIndex_];
+		memcpy(frameUniforms.mappedData() + offset, pipeline_->program_->looseUniformsStorage(), size);
+		device_.frameUniformsOffset_ = offset + size;
+
+		bufferInfos[numBuffers] = { frameUniforms.handle(), offset, size };
+		VkWriteDescriptorSet &write = writes[numWrites++];
+		write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+		write.dstBinding = static_cast<uint32_t>(pipeline_->looseBinding_);
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		write.pBufferInfo = &bufferInfos[numBuffers++];
+	}
+
+	for (int binding : pipeline_->blockBindings_)
+	{
+		const UniformBufferBinding &uniformBuffer = uniformBuffers_[binding];
+		if (uniformBuffer.buffer == VK_NULL_HANDLE)
+			continue;
+		bufferInfos[numBuffers] = { uniformBuffer.buffer, uniformBuffer.offset, uniformBuffer.range };
+		VkWriteDescriptorSet &write = writes[numWrites++];
+		write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+		write.dstBinding = static_cast<uint32_t>(binding);
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		write.pBufferInfo = &bufferInfos[numBuffers++];
+	}
+
+	for (unsigned int unit = 0; unit < pipeline_->samplerBindings_.size(); unit++)
+	{
+		const VkRhiTexture *texture = (unit < MaxTextureUnits && textures_[unit]) ? textures_[unit] : device_.dummyTexture_.get();
+		imageInfos[numImages] = { texture->sampler(), texture->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		VkWriteDescriptorSet &write = writes[numWrites++];
+		write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+		write.dstBinding = static_cast<uint32_t>(pipeline_->samplerBindings_[unit]);
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		write.pImageInfo = &imageInfos[numImages++];
+	}
+
+	if (numWrites > 0)
+		device_.pushDescriptorSet_(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout_, 0, numWrites, writes);
 }
 
 void VkRhiCommandList::draw(unsigned int vertexCount, unsigned int instanceCount, unsigned int firstVertex)
 {
+	if (pipeline_ == nullptr || pipeline_->isValid() == false)
+		return;
+	pushDescriptors();
 	vkCmdDraw(commandBuffer_, vertexCount, instanceCount > 0 ? instanceCount : 1, firstVertex, 0);
 }
 
 void VkRhiCommandList::drawIndexed(unsigned int indexCount, unsigned int instanceCount, unsigned int firstIndex, int vertexOffset)
 {
+	if (pipeline_ == nullptr || pipeline_->isValid() == false)
+		return;
+	pushDescriptors();
 	vkCmdDrawIndexed(commandBuffer_, indexCount, instanceCount > 0 ? instanceCount : 1, firstIndex, vertexOffset, 0);
 }
 
@@ -282,6 +355,9 @@ VkRhiDevice::~VkRhiDevice()
 	{
 		vkDeviceWaitIdle(device_);
 		readbackBuffer_.reset(nullptr);
+		dummyTexture_.reset(nullptr);
+		for (nctl::UniquePtr<VkRhiBuffer> &frameUniforms : frameUniforms_)
+			frameUniforms.reset(nullptr);
 		destroySwapchain();
 		vkDestroyFence(device_, transferFence_, nullptr);
 		vkDestroyCommandPool(device_, transferPool_, nullptr);
@@ -366,6 +442,29 @@ bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 	VK_CHECK(vkAllocateCommandBuffers(device_, &transferAllocateInfo, &transferCommandBuffer_));
 	VkFenceCreateInfo transferFenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 	VK_CHECK(vkCreateFence(device_, &transferFenceInfo, nullptr, &transferFence_));
+
+	pushDescriptorSet_ = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(vkGetDeviceProcAddr(device_, "vkCmdPushDescriptorSetKHR"));
+	if (pushDescriptorSet_ == nullptr)
+	{
+		LOGE("vkCmdPushDescriptorSetKHR() is not available");
+		return false;
+	}
+	igfx::BufferDesc frameUniformsDesc;
+	frameUniformsDesc.usage = igfx::BufferUsage::UNIFORM;
+	frameUniformsDesc.size = FrameUniformsSize;
+	for (nctl::UniquePtr<VkRhiBuffer> &frameUniforms : frameUniforms_)
+	{
+		frameUniforms = nctl::makeUnique<VkRhiBuffer>(allocator_, frameUniformsDesc);
+		if (frameUniforms->isValid() == false)
+			return false;
+	}
+	igfx::TextureDesc dummyDesc;
+	dummyDesc.width = 1;
+	dummyDesc.height = 1;
+	dummyDesc.format = igfx::Format::RGBA8;
+	dummyTexture_ = nctl::makeUnique<VkRhiTexture>(*this, dummyDesc);
+	const uint8_t white[4] = { 255, 255, 255, 255 };
+	dummyTexture_->upload(0, white);
 
 	return createSwapchain();
 }
@@ -680,6 +779,7 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 		LOGE_X("vkAcquireNextImageKHR() failed with VkResult %d", result);
 	imageAvailablePending_ = true;
+	frameUniformsOffset_ = 0; // this frame's transient uniforms are free again, its fence has been waited
 
 	vkResetFences(device_, 1, &frame.fence);
 	vkResetCommandPool(device_, frame.commandPool, 0);
@@ -824,10 +924,9 @@ nctl::UniquePtr<igfx::IShaderProgram> VkRhiDevice::createShaderProgram(const cha
 	return nctl::makeUnique<VkRhiShaderProgram>(device_, vertexSource, fragmentSource, name);
 }
 
-nctl::UniquePtr<igfx::IPipeline> VkRhiDevice::createPipeline(const igfx::PipelineDesc &)
+nctl::UniquePtr<igfx::IPipeline> VkRhiDevice::createPipeline(const igfx::PipelineDesc &desc)
 {
-	notImplemented("createPipeline()");
-	return nctl::UniquePtr<igfx::IPipeline>(nullptr);
+	return nctl::makeUnique<VkRhiPipeline>(*this, desc);
 }
 
 }
