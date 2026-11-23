@@ -11,6 +11,7 @@
 #include "GLClearColor.h"
 #include "GLViewport.h"
 #include "GLScissorTest.h"
+#include "GLDepthTest.h"
 #include "GLDebug.h"
 #include "tracy.h"
 
@@ -505,7 +506,33 @@ void Viewport::draw(unsigned int nextIndex)
 		fbo_->drawBuffers(numColorAttachments_);
 	}
 
+#ifdef WITH_RHI
+	// The screen is a render pass, cleared when it begins; texture viewports join in the render-to-texture slice
+	if (type_ == Type::SCREEN)
+	{
+		const unsigned long int numFrames = theApplication().numFrames();
+		igfx::RenderPassDesc passDesc;
+		passDesc.clear.flags = igfx::CLEAR_NONE;
+		if ((lastFrameCleared_ < numFrames && (clearMode_ == ClearMode::EVERY_FRAME || clearMode_ == ClearMode::THIS_FRAME_ONLY)) ||
+		    clearMode_ == ClearMode::EVERY_DRAW)
+		{
+			switch (depthStencilFormat_)
+			{
+				default:
+				case DepthStencilFormat::DEPTH24_STENCIL8: passDesc.clear.flags = igfx::CLEAR_COLOR | igfx::CLEAR_DEPTH | igfx::CLEAR_STENCIL; break;
+				case DepthStencilFormat::DEPTH24:
+				case DepthStencilFormat::DEPTH16: passDesc.clear.flags = igfx::CLEAR_COLOR | igfx::CLEAR_DEPTH; break;
+				case DepthStencilFormat::NONE: passDesc.clear.flags = igfx::CLEAR_COLOR; break;
+			}
+			passDesc.clear.color = clearColor_;
+			lastFrameCleared_ = numFrames;
+		}
+		RenderResources::rhiCommandList().beginRenderPass(passDesc);
+	}
+	if (type_ == Type::WITH_TEXTURE)
+#else
 	if (type_ == Type::SCREEN || type_ == Type::WITH_TEXTURE)
+#endif
 	{
 		const unsigned long int numFrames = theApplication().numFrames();
 		if ((lastFrameCleared_ < numFrames && (clearMode_ == ClearMode::EVERY_FRAME || clearMode_ == ClearMode::THIS_FRAME_ONLY)) ||
@@ -513,6 +540,9 @@ void Viewport::draw(unsigned int nextIndex)
 		{
 			const GLClearColor::State clearColorState = GLClearColor::state();
 			GLClearColor::setColor(clearColor_);
+#ifdef WITH_RHI
+			GLDepthTest::enableDepthMask(); // the last pipeline may have disabled depth writes
+#endif
 
 			switch (depthStencilFormat_)
 			{
@@ -548,6 +578,28 @@ void Viewport::draw(unsigned int nextIndex)
 	RenderResources::setCurrentCamera(camera_);
 	RenderResources::updateCameraUniforms();
 
+#ifdef WITH_RHI
+	if (renderQueue_->isEmpty() == false)
+	{
+		igfx::ICommandList &commandList = RenderResources::rhiCommandList();
+		const bool viewportRectNonZeroArea = (viewportRect_.w > 0 && viewportRect_.h > 0);
+		const Recti previousViewport = commandList.viewport();
+		if (viewportRectNonZeroArea)
+			commandList.setViewport(viewportRect_);
+
+		const bool scissorRectNonZeroArea = (scissorRect_.w > 0 && scissorRect_.h > 0);
+		const Recti previousScissor = commandList.scissor();
+		if (scissorRectNonZeroArea)
+			commandList.setScissor(scissorRect_);
+
+		renderQueue_->draw();
+
+		if (scissorRectNonZeroArea)
+			commandList.setScissor(previousScissor);
+		if (viewportRectNonZeroArea)
+			commandList.setViewport(previousViewport);
+	}
+#else
 	if (renderQueue_->isEmpty() == false)
 	{
 		const bool viewportRectNonZeroArea = (viewportRect_.w > 0 && viewportRect_.h > 0);
@@ -567,6 +619,7 @@ void Viewport::draw(unsigned int nextIndex)
 		if (viewportRectNonZeroArea)
 			GLViewport::setState(viewportState);
 	}
+#endif
 
 	if (type_ == Type::WITH_TEXTURE && depthStencilFormat_ != DepthStencilFormat::NONE &&
 	    theApplication().appConfiguration().graphics.opengl.debugContext == false)
@@ -574,6 +627,11 @@ void Viewport::draw(unsigned int nextIndex)
 		const GLenum invalidAttachment = depthStencilFormatToGLAttachment(depthStencilFormat_);
 		fbo_->invalidate(1, &invalidAttachment);
 	}
+
+#ifdef WITH_RHI
+	if (type_ == Type::SCREEN)
+		RenderResources::rhiCommandList().endRenderPass();
+#endif
 
 	if (clearMode_ == ClearMode::THIS_FRAME_ONLY)
 		clearMode_ = ClearMode::NEVER;

@@ -28,6 +28,10 @@ class ICommandList
 	virtual void setViewport(const Recti &rect) = 0;
 	/// A rectangle with zero width or height disables the scissor test
 	virtual void setScissor(const Recti &rect) = 0;
+	/// Current dynamic state, so callers can restore what they change
+	virtual Recti viewport() const = 0;
+	/// Zero width and height when the scissor test is disabled
+	virtual Recti scissor() const = 0;
 
 	virtual void bindPipeline(IPipeline &pipeline) = 0;
 	virtual void bindVertexBuffer(IBuffer &buffer, unsigned long offset) = 0;

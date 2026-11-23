@@ -305,6 +305,8 @@ void GLRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 
 	if (mask != 0)
 	{
+		if (mask & GL_DEPTH_BUFFER_BIT)
+			GLDepthTest::enableDepthMask(); // the last pipeline may have disabled depth writes
 		const GLClearColor::State clearColorState = GLClearColor::state();
 		GLClearColor::setColor(desc.clear.color);
 		glClear(mask);
@@ -323,6 +325,17 @@ void GLRhiCommandList::setScissor(const Recti &rect)
 		GLScissorTest::enable(rect);
 	else
 		GLScissorTest::disable();
+}
+
+/// The GL wrappers' cached state stays the source of truth while parts of the renderer still set it directly
+Recti GLRhiCommandList::viewport() const
+{
+	return GLViewport::rect();
+}
+
+Recti GLRhiCommandList::scissor() const
+{
+	return GLScissorTest::isEnabled() ? GLScissorTest::rect() : Recti(0, 0, 0, 0);
 }
 
 void GLRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)

@@ -36,6 +36,8 @@ class GLRhiCommandList : public igfx::ICommandList
 
 	void setViewport(const Recti &rect) override;
 	void setScissor(const Recti &rect) override;
+	Recti viewport() const override;
+	Recti scissor() const override;
 
 	void bindPipeline(igfx::IPipeline &pipeline) override;
 	void bindVertexBuffer(igfx::IBuffer &buffer, unsigned long offset) override;

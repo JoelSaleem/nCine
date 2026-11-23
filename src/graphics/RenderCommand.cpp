@@ -68,10 +68,10 @@ void RenderCommand::issue()
 	// ponytail: loose uniforms still go through the GL uniform caches, Vulkan needs them in a uniform buffer (Task 1.4)
 	material_.commitUniforms();
 
-	// ponytail: scissor save/restore stays on GL state until viewports become render passes (Task 1.4)
-	GLScissorTest::State scissorTestState = GLScissorTest::state();
-	if (scissorRect_.w > 0 && scissorRect_.h > 0)
-		GLScissorTest::enable(scissorRect_);
+	const Recti previousScissor = commandList.scissor();
+	const bool hasScissor = (scissorRect_.w > 0 && scissorRect_.h > 0);
+	if (hasScissor)
+		commandList.setScissor(scissorRect_);
 
 	unsigned int vertexFormatOffset = 0;
 	if (numInstances_ > 0)
@@ -87,7 +87,8 @@ void RenderCommand::issue()
 	else
 		commandList.draw(geometry_.numVertices_, numInstances_, firstVertex);
 
-	GLScissorTest::setState(scissorTestState);
+	if (hasScissor)
+		commandList.setScissor(previousScissor);
 }
 #else
 void RenderCommand::issue()
