@@ -29,9 +29,8 @@ unsigned int RenderBatcher::UboMaxSize = 0;
 RenderBatcher::RenderBatcher()
     : buffers_(1)
 {
-	const IGfxCapabilities &gfxCaps = theServiceLocator().gfxCapabilities();
-	// Clamped between 16 KB and 64 KB
-	UboMaxSize = static_cast<unsigned int>(gfxCaps.value(IGfxCapabilities::GLIntValues::MAX_UNIFORM_BLOCK_SIZE));
+	// The buffer manager holds the clamped size for every backend (the GL capability on OpenGL)
+	UboMaxSize = static_cast<unsigned int>(RenderResources::buffersManager().specs(RenderBuffersManager::BufferTypes::UNIFORM).maxSize);
 
 	// Create the first buffer right away
 	createBuffer(UboMaxSize);

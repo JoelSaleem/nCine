@@ -677,8 +677,14 @@ void RenderResources::create()
 #ifdef WITH_RHI
 igfx::IPipeline &RenderResources::rhiPipeline(const igfx::PipelineDesc &desc)
 {
-	// ponytail: keyed on the fields the OpenGL backend reads, add the vertex layout once Vulkan builds real pipelines
+	uint64_t layoutHash = static_cast<uint64_t>(desc.vertexLayout.stride) | (static_cast<uint64_t>(desc.vertexLayout.perInstance) << 32);
+	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
+	{
+		const uint64_t attributeKey = static_cast<uint64_t>(attribute.location) | (static_cast<uint64_t>(attribute.format) << 8) | (static_cast<uint64_t>(attribute.offset) << 16);
+		layoutHash = nctl::fasthash64(&attributeKey, sizeof(attributeKey), layoutHash);
+	}
 	const uint64_t fields[] = {
+		layoutHash,
 		static_cast<uint64_t>(reinterpret_cast<uintptr_t>(desc.program)),
 		static_cast<uint64_t>(desc.topology),
 		static_cast<uint64_t>(desc.blend.enabled) | (static_cast<uint64_t>(desc.blend.srcFactor) << 8) | (static_cast<uint64_t>(desc.blend.dstFactor) << 16),

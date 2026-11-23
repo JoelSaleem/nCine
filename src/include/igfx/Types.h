@@ -66,7 +66,8 @@ enum class VertexFormat
 	FLOAT3,
 	FLOAT4,
 	UBYTE4_NORM, // packed colors
-	USHORT1, // mesh indices
+	USHORT1,
+	INT1, // mesh indices
 	UINT1
 };
 

@@ -282,12 +282,29 @@ uint32_t Material::sortKey()
 	uint32_t hash = Seed;
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 	{
+#ifdef WITH_RHI
+		// Without GL objects (Vulkan) identity comes from the igfx objects, or every material would batch together
+		if (textures_[i] == nullptr && rhiTextures_[i] != nullptr)
+		{
+			const uintptr_t textureIdentity = reinterpret_cast<uintptr_t>(rhiTextures_[i]);
+			hash = nctl::fasthash32(&textureIdentity, sizeof(textureIdentity), hash);
+			continue;
+		}
+#endif
 		const GLuint textureHandle = (textures_[i] != nullptr) ? textures_[i]->glHandle() : 0;
 		hash = nctl::fasthash32(&textureHandle, sizeof(textureHandle), hash);
 	}
 
 	const GLuint shaderProgramHandle = shaderProgram_->glHandle();
-	hash = nctl::fasthash32(&shaderProgramHandle, sizeof(shaderProgramHandle), hash);
+#ifdef WITH_RHI
+	if (shaderProgramHandle == 0)
+	{
+		const uintptr_t programIdentity = reinterpret_cast<uintptr_t>(&shaderProgram_->rhiProgram());
+		hash = nctl::fasthash32(&programIdentity, sizeof(programIdentity), hash);
+	}
+	else
+#endif
+		hash = nctl::fasthash32(&shaderProgramHandle, sizeof(shaderProgramHandle), hash);
 
 	hash = nctl::fasthash32(&srcBlendingFactor_, sizeof(srcBlendingFactor_), hash);
 	hash = nctl::fasthash32(&destBlendingFactor_, sizeof(destBlendingFactor_), hash);

@@ -125,6 +125,8 @@ class GLShaderProgram
 	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override;
 	const nctl::Array<igfx::AttributeInfo> &attributes() const override;
 	int looseUniformsSize() const override { return rhiProgram_ ? rhiProgram_->looseUniformsSize() : static_cast<int>(uniformsSize_); }
+	/// The vertex input this program reads, from its attributes and their buffer parameters
+	igfx::VertexLayout vertexLayout();
 	/// Uploads the masked loose uniforms, skipping values equal to the ones last uploaded to this program
 	void commitLooseUniforms(const uint8_t *data, uint32_t writeMask);
 #endif

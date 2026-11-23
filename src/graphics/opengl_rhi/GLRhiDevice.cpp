@@ -288,6 +288,33 @@ GLShaderProgram::GLShaderProgram(igfx::IShaderProgram &rhiProgram)
 	}
 }
 
+igfx::VertexLayout GLShaderProgram::vertexLayout()
+{
+	igfx::VertexLayout layout;
+	for (const GLAttribute &glAttribute : attributes_)
+	{
+		const GLVertexFormat::Attribute *attribute = this->attribute(glAttribute.name());
+		if (attribute == nullptr || attribute->isEnabled() == false)
+			continue;
+
+		igfx::VertexAttribute vertexAttribute;
+		vertexAttribute.location = attribute->index();
+		vertexAttribute.offset = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(attribute->pointer()));
+		const GLint size = attribute->size();
+		switch (attribute->type())
+		{
+			case GL_FLOAT: vertexAttribute.format = static_cast<igfx::VertexFormat>(static_cast<int>(igfx::VertexFormat::FLOAT1) + (size - 1)); break;
+			case GL_UNSIGNED_BYTE: vertexAttribute.format = igfx::VertexFormat::UBYTE4_NORM; break;
+			case GL_UNSIGNED_SHORT: vertexAttribute.format = igfx::VertexFormat::USHORT1; break;
+			case GL_INT: vertexAttribute.format = igfx::VertexFormat::INT1; break;
+			default: vertexAttribute.format = igfx::VertexFormat::UINT1; break;
+		}
+		layout.stride = static_cast<uint32_t>(attribute->stride());
+		layout.attributes.pushBack(vertexAttribute);
+	}
+	return layout;
+}
+
 void GLShaderProgram::invalidateReflection()
 {
 	reflectionBuilt_ = false;

@@ -19,6 +19,22 @@ namespace {
 		return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	}
 
+	VkFormat vertexFormatToVk(igfx::VertexFormat format)
+	{
+		switch (format)
+		{
+			case igfx::VertexFormat::FLOAT1: return VK_FORMAT_R32_SFLOAT;
+			case igfx::VertexFormat::FLOAT2: return VK_FORMAT_R32G32_SFLOAT;
+			case igfx::VertexFormat::FLOAT3: return VK_FORMAT_R32G32B32_SFLOAT;
+			case igfx::VertexFormat::FLOAT4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+			case igfx::VertexFormat::UBYTE4_NORM: return VK_FORMAT_R8G8B8A8_UNORM;
+			case igfx::VertexFormat::USHORT1: return VK_FORMAT_R16_UINT;
+			case igfx::VertexFormat::INT1: return VK_FORMAT_R32_SINT;
+			case igfx::VertexFormat::UINT1: return VK_FORMAT_R32_UINT;
+		}
+		return VK_FORMAT_R32G32_SFLOAT;
+	}
+
 	/// Same order as `igfx::BlendFactor`
 	const VkBlendFactor BlendFactors[] = {
 		VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
@@ -83,8 +99,19 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	shaderStages[1].module = program_->fragmentModule();
 	shaderStages[1].pName = "main";
 
-	// ponytail: no vertex buffers yet, enough for the sprites that build vertices from gl_VertexID; mesh layouts come next
+	// One interleaved vertex buffer at binding 0, as the renderer's managed VBOs are laid out
+	VkVertexInputBindingDescription vertexBinding = { 0, desc.vertexLayout.stride, desc.vertexLayout.perInstance ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX };
+	nctl::StaticArray<VkVertexInputAttributeDescription, igfx::VertexLayout::MaxAttributes> vertexAttributes;
+	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
+		vertexAttributes.pushBack({ attribute.location, 0, vertexFormatToVk(attribute.format), attribute.offset });
 	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+	if (vertexAttributes.isEmpty() == false)
+	{
+		vertexInput.vertexBindingDescriptionCount = 1;
+		vertexInput.pVertexBindingDescriptions = &vertexBinding;
+		vertexInput.vertexAttributeDescriptionCount = vertexAttributes.size();
+		vertexInput.pVertexAttributeDescriptions = vertexAttributes.data();
+	}
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
 	inputAssembly.topology = topologyToVk(desc.topology);

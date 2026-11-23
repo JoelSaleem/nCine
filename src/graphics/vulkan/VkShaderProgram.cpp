@@ -136,15 +136,21 @@ namespace {
 		{
 			if (bindingWord[id] == 0)
 				continue;
-			const char *name = (names[id] && names[id][0] != '\0') ? names[id] : nullptr;
-			if (name == nullptr && variableType[id] < bound && pointee[variableType[id]] < bound)
-				name = names[pointee[variableType[id]]];
-			for (unsigned int b = 0; name && b < numBindings; b++)
+			// Named block instances (`uniform Block { ... } block;`) are found by their type name
+			const char *variableName = names[id];
+			const char *typeName = (variableType[id] < bound && pointee[variableType[id]] < bound) ? names[pointee[variableType[id]]] : nullptr;
+			const char *candidates[2] = { variableName, typeName };
+			bool remapped = false;
+			for (unsigned int c = 0; c < 2 && remapped == false; c++)
 			{
-				if (strcmp(name, bindings[b].name) == 0)
+				for (unsigned int b = 0; candidates[c] && b < numBindings; b++)
 				{
-					spirv[bindingWord[id]] = static_cast<unsigned int>(bindings[b].binding);
-					break;
+					if (strcmp(candidates[c], bindings[b].name) == 0)
+					{
+						spirv[bindingWord[id]] = static_cast<unsigned int>(bindings[b].binding);
+						remapped = true;
+						break;
+					}
 				}
 			}
 		}
