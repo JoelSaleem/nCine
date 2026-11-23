@@ -1,4 +1,5 @@
 #include "Clock.h"
+#include "FrameCapture.h"
 
 #if defined(_WIN32)
 	#include "common_windefines.h"
@@ -29,7 +30,7 @@ Clock &clock()
 ///////////////////////////////////////////////////////////
 
 Clock::Clock()
-    : frequency_(0UL), baseCount_(0ULL)
+    : frequency_(0UL), baseCount_(0ULL), isVirtual_(FrameCapture::fromEnv().enabled), virtualNow_(0)
 {
 #if defined(_WIN32)
 	if (QueryPerformanceFrequency(reinterpret_cast<LARGE_INTEGER *>(&frequency_)))

@@ -8,8 +8,10 @@
 #include "GLDebug.h"
 #include "Timer.h" // for `sleep()`
 #include "FrameTimer.h"
+#include "Clock.h"
 #include "FrameCapture.h"
 #include "IImageSaver.h"
+#include "GLFramebufferObject.h"
 #include <nctl/StaticString.h>
 
 #ifdef WITH_ALLOCATORS
@@ -59,14 +61,26 @@ namespace {
 	static nctl::StaticString<256> appInfoString;
 	static FrameCapture::Config captureConfig;
 
-#ifdef WITH_SCENEGRAPH
-	bool saveCapture(const Viewport &viewport, const char *path)
+	/// Saves the back buffer as RGB8, through the screen viewport when there is one
+	bool saveCapture(const char *path, const Viewport *screenViewport, int width, int height)
 	{
-		const int width = viewport.width();
-		const int height = viewport.height();
 		nctl::UniquePtr<unsigned char[]> pixels = nctl::makeUnique<unsigned char[]>(width * height * 3);
-		if (viewport.savePixels(pixels.get()) == false)
-			return false;
+#ifdef WITH_SCENEGRAPH
+		if (screenViewport != nullptr)
+		{
+			if (screenViewport->savePixels(pixels.get()) == false)
+				return false;
+		}
+		else
+#endif
+		{
+			GLFramebufferObject::unbind(GL_READ_FRAMEBUFFER);
+			GLint previousPackAlignment = 4;
+			glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
+			glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.get());
+			glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
+		}
 
 		IImageSaver::Properties properties;
 		properties.width = width;
@@ -76,7 +90,6 @@ namespace {
 		properties.pixels = pixels.get();
 		return IImageSaver::save(properties, path);
 	}
-#endif
 
 	void logInitInformation()
 	{
@@ -316,8 +329,6 @@ void Application::initCommon()
 
 	frameTimer_ = nctl::makeUnique<FrameTimer>(appCfg_.profileTextUpdateTime, appCfg_.logging.frameTimerInterval);
 	captureConfig = FrameCapture::fromEnv();
-	if (captureConfig.enabled)
-		frameTimer_->setFixedFrameTime(FrameCapture::FixedFrameTime);
 
 	// Create a minimal set of render resources before compiling the first shader
 	RenderResources::createMinimal(); // they are required for rendering even without a scenegraph
@@ -379,6 +390,8 @@ void Application::initCommon()
 void Application::step()
 {
 	ZoneScoped;
+	if (clock().isVirtual())
+		clock().advanceVirtual(static_cast<uint64_t>(FrameCapture::FixedFrameTime * clock().frequency()));
 	frameTimer_->addFrame();
 
 #ifdef WITH_IMGUI
@@ -520,24 +533,34 @@ void Application::step()
 		theServiceLocator().logger().consumeQueue();
 #endif
 
-#ifdef WITH_SCENEGRAPH
 	// Read back before swapping, while the back buffer still holds this frame
 	if (captureConfig.enabled && frameTimer_->totalNumberFrames() == captureConfig.targetFrame)
 	{
-		if (screenViewport_ == nullptr || saveCapture(*screenViewport_, captureConfig.path) == false)
+		const Viewport *viewport = nullptr;
+		int width = gfxDevice_->drawableWidth();
+		int height = gfxDevice_->drawableHeight();
+#ifdef WITH_SCENEGRAPH
+		if (screenViewport_ != nullptr)
+		{
+			viewport = screenViewport_.get();
+			width = viewport->width();
+			height = viewport->height();
+		}
+#endif
+		if (saveCapture(captureConfig.path, viewport, width, height) == false)
 			LOGE_X("Cannot save frame capture to \"%s\"", captureConfig.path);
 		else
 			LOGI_X("Frame %u captured to \"%s\"", captureConfig.targetFrame, captureConfig.path);
 		if (captureConfig.quitAfter)
 			quit();
 	}
-#endif
 
 	gfxDevice_->update();
 	FrameMark;
 	TracyGpuCollect;
 
-	if (appCfg_.graphics.frameLimit > 0)
+	// Virtual time does not move within a frame, waiting on it would never end
+	if (appCfg_.graphics.frameLimit > 0 && clock().isVirtual() == false)
 	{
 		const float frameTimeDuration = 1.0f / static_cast<float>(appCfg_.graphics.frameLimit);
 		while (frameTimer_->currentFrameTime() < frameTimeDuration)
