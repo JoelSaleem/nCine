@@ -66,10 +66,12 @@ GLShaderProgram::GLShaderProgram(const char *vertexFile, const char *fragmentFil
 
 GLShaderProgram::~GLShaderProgram()
 {
-	if (boundProgram_ == glHandle_)
-		glUseProgram(0);
-
-	glDeleteProgram(glHandle_);
+	if (glHandle_ != 0) // zero for programs describing another backend's one
+	{
+		if (boundProgram_ == glHandle_)
+			glUseProgram(0);
+		glDeleteProgram(glHandle_);
+	}
 
 #ifdef WITH_SCENEGRAPH
 	RenderResources::removeCameraUniformData(this);

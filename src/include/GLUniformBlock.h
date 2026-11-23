@@ -5,7 +5,12 @@
 #include "common_headers.h"
 #include "GLUniform.h"
 #include <nctl/StaticHashMap.h>
+#include <nctl/Array.h>
 #include <nctl/String.h>
+
+#ifdef WITH_RHI
+	#include "igfx/Types.h"
+#endif
 
 namespace ncine {
 
@@ -25,6 +30,10 @@ class GLUniformBlock
 	GLUniformBlock();
 	GLUniformBlock(GLuint program, GLuint blockIndex, DiscoverUniforms discover);
 	GLUniformBlock(GLuint program, GLuint blockIndex);
+#ifdef WITH_RHI
+	/// Built from another backend's reflection, padded to `offsetAlignment` like the OpenGL blocks
+	GLUniformBlock(const igfx::UniformBlockInfo &info, GLuint index, const nctl::Array<igfx::UniformInfo> &uniforms, int offsetAlignment);
+#endif
 
 	inline GLuint index() const { return index_; }
 	inline GLint bindingIndex() const { return bindingIndex_; }

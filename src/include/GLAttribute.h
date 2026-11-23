@@ -4,6 +4,10 @@
 #define NCINE_INCLUDE_OPENGL
 #include "common_headers.h"
 
+#ifdef WITH_RHI
+	#include "igfx/Types.h"
+#endif
+
 namespace ncine {
 
 /// A class to store information about an active OpenGL shader attribute
@@ -12,6 +16,9 @@ class GLAttribute
   public:
 	GLAttribute();
 	GLAttribute(GLuint program, GLuint index);
+#ifdef WITH_RHI
+	explicit GLAttribute(const igfx::AttributeInfo &info);
+#endif
 
 	inline GLint location() const { return location_; }
 	inline GLint size() const { return size_; }

@@ -90,6 +90,25 @@ GLUniformBlock::GLUniformBlock(GLuint program, GLuint index)
 // PUBLIC FUNCTIONS
 ///////////////////////////////////////////////////////////
 
+#ifdef WITH_RHI
+GLUniformBlock::GLUniformBlock(const igfx::UniformBlockInfo &info, GLuint index, const nctl::Array<igfx::UniformInfo> &uniforms, int offsetAlignment)
+    : program_(0), index_(index), size_(info.size), alignAmount_(0), bindingIndex_(info.binding)
+{
+	strncpy(name_, info.name.data(), MaxNameLength - 1);
+	name_[MaxNameLength - 1] = '\0';
+	for (const igfx::UniformInfo &uniform : uniforms)
+	{
+		if (uniform.blockIndex == static_cast<int>(index))
+			blockUniforms_[uniform.name] = GLUniform(uniform, static_cast<GLint>(index));
+	}
+	if (offsetAlignment > 0)
+	{
+		alignAmount_ = static_cast<unsigned char>((offsetAlignment - size_ % offsetAlignment) % offsetAlignment);
+		size_ += alignAmount_;
+	}
+}
+
+#endif
 void GLUniformBlock::setBlockBinding(GLuint blockBinding)
 {
 	ASSERT(program_ != 0);

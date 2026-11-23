@@ -107,7 +107,7 @@ void GLShaderUniformBlocks::bind(igfx::ICommandList &commandList)
 	unsigned long moreOffset = 0;
 	for (GLUniformBlockCache &uniformBlockCache : uniformBlockCaches_)
 	{
-		commandList.bindUniformBuffer(static_cast<int>(uniformBlockCache.index()), *uboParams_.rhiObject, uboParams_.offset + moreOffset, uniformBlockCache.usedSize());
+		commandList.bindUniformBuffer(static_cast<int>(uniformBlockCache.bindingIndex()), *uboParams_.rhiObject, uboParams_.offset + moreOffset, uniformBlockCache.usedSize());
 		moreOffset += uniformBlockCache.usedSize();
 	}
 }

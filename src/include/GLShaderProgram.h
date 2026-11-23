@@ -53,6 +53,13 @@ class GLShaderProgram
 	GLShaderProgram(const char *vertexFile, const char *fragmentFile, Introspection introspection);
 	GLShaderProgram(const char *vertexFile, const char *fragmentFile);
 	~GLShaderProgram();
+#ifdef WITH_RHI
+	/// Describes a program compiled by another backend: no OpenGL object, introspection from its reflection,
+	/// so materials and their uniform caches work the same on every backend
+	explicit GLShaderProgram(igfx::IShaderProgram &rhiProgram);
+	/// The program that draws, itself on OpenGL or the one this describes
+	inline igfx::IShaderProgram &rhiProgram() { return rhiProgram_ ? *rhiProgram_ : *this; }
+#endif
 
 	/// Initializes a shader program from a binary shader file
 	bool initFromBinary(const char *filename, Introspection introspection);
@@ -117,7 +124,7 @@ class GLShaderProgram
 	const nctl::Array<igfx::UniformInfo> &uniforms() const override;
 	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override;
 	const nctl::Array<igfx::AttributeInfo> &attributes() const override;
-	int looseUniformsSize() const override { return static_cast<int>(uniformsSize_); }
+	int looseUniformsSize() const override { return rhiProgram_ ? rhiProgram_->looseUniformsSize() : static_cast<int>(uniformsSize_); }
 	/// Uploads the masked loose uniforms, skipping values equal to the ones last uploaded to this program
 	void commitLooseUniforms(const uint8_t *data, uint32_t writeMask);
 #endif
@@ -130,6 +137,7 @@ class GLShaderProgram
 	/// Copy of the loose uniform values last uploaded, one valid bit per uniform (at most `MaxNumUniforms`)
 	nctl::UniquePtr<uint8_t[]> rhiUniformShadow_;
 	uint32_t rhiUniformShadowValid_ = 0;
+	igfx::IShaderProgram *rhiProgram_ = nullptr;
 	mutable bool reflectionBuilt_ = false;
 	mutable nctl::String rhiInfoLog_;
 	mutable nctl::Array<igfx::UniformInfo> rhiUniforms_ = nctl::Array<igfx::UniformInfo>(MaxNumUniforms);

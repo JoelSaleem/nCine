@@ -4,6 +4,10 @@
 #define NCINE_INCLUDE_OPENGL
 #include "common_headers.h"
 
+#ifdef WITH_RHI
+	#include "igfx/Types.h"
+#endif
+
 namespace ncine {
 
 /// A class to store information about an active OpenGL shader uniform
@@ -15,6 +19,10 @@ class GLUniform
 
 	GLUniform();
 	GLUniform(GLuint program, GLuint index);
+#ifdef WITH_RHI
+	/// Built from another backend's reflection, for the uniform caches; no OpenGL program behind it
+	GLUniform(const igfx::UniformInfo &info, GLint blockIndex);
+#endif
 
 	inline GLuint index() const { return index_; }
 	inline GLint blockIndex() const { return blockIndex_; }

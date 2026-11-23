@@ -4,6 +4,9 @@
 #include "GLTexture.h"
 #include "GLShaderProgram.h"
 #include "GLUniformCache.h"
+#include "RenderResources.h"
+#include "IGfxCapabilities.h"
+#include "ServiceLocator.h"
 #include "GLBlending.h"
 #include "GLDepthTest.h"
 #include "GLCullFace.h"
@@ -229,12 +232,16 @@ const nctl::String &GLShaderProgram::infoLog() const
 
 const nctl::Array<igfx::UniformInfo> &GLShaderProgram::uniforms() const
 {
+	if (rhiProgram_)
+		return rhiProgram_->uniforms();
 	buildReflection();
 	return rhiUniforms_;
 }
 
 const nctl::Array<igfx::UniformBlockInfo> &GLShaderProgram::uniformBlocks() const
 {
+	if (rhiProgram_)
+		return rhiProgram_->uniformBlocks();
 	buildReflection();
 	return rhiUniformBlocks_;
 }
@@ -243,6 +250,42 @@ const nctl::Array<igfx::AttributeInfo> &GLShaderProgram::attributes() const
 {
 	buildReflection();
 	return rhiAttributes_;
+}
+
+GLShaderProgram::GLShaderProgram(igfx::IShaderProgram &rhiProgram)
+    : glHandle_(0), attachedShaders_(AttachedShadersInitialSize), hashName_(0),
+      status_(Status::LINKED_WITH_INTROSPECTION), queryPhase_(QueryPhase::IMMEDIATE), shouldLogOnErrors_(true),
+      uniformsSize_(0), uniformBlocksSize_(0), uniforms_(UniformsInitialSize),
+      uniformBlocks_(UniformBlocksInitialSize), attributes_(AttributesInitialSize), rhiProgram_(&rhiProgram)
+{
+	introspection_ = Introspection::ENABLED;
+	const nctl::Array<igfx::UniformInfo> &uniforms = rhiProgram.uniforms();
+	// Samplers are descriptors on Vulkan, not loose values, so they get no cache
+	for (const igfx::UniformInfo &uniform : uniforms)
+	{
+		if (uniform.blockIndex == -1 && uniform.type != igfx::UniformType::SAMPLER_2D)
+			uniforms_.pushBack(GLUniform(uniform, -1));
+	}
+	uniformsSize_ = static_cast<unsigned int>(rhiProgram.looseUniformsSize());
+
+	const int offsetAlignment = theServiceLocator().gfxCapabilities().value(IGfxCapabilities::GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT);
+	const int alignment = (offsetAlignment > 0) ? offsetAlignment : RenderResources::rhiDevice().limits().uniformBufferOffsetAlignment;
+	const nctl::Array<igfx::UniformBlockInfo> &blocks = rhiProgram.uniformBlocks();
+	for (unsigned int i = 0; i < blocks.size(); i++)
+	{
+		uniformBlocks_.pushBack(GLUniformBlock(blocks[i], i, uniforms, alignment));
+		uniformBlocksSize_ += uniformBlocks_.back().size();
+	}
+	for (const igfx::AttributeInfo &attribute : rhiProgram.attributes())
+	{
+		if (strncmp(attribute.name.data(), "gl_", 3) != 0 && attribute.location >= 0)
+		{
+			attributes_.pushBack(GLAttribute(attribute));
+			const GLAttribute &glAttribute = attributes_.back();
+			attributeLocations_[attribute.name] = attribute.location;
+			vertexFormat_[attribute.location].init(attribute.location, glAttribute.numComponents(), glAttribute.basicType());
+		}
+	}
 }
 
 void GLShaderProgram::invalidateReflection()

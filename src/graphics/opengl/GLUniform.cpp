@@ -3,10 +3,50 @@
 
 namespace ncine {
 
+#ifdef WITH_RHI
+namespace {
+	GLenum uniformTypeToGL(igfx::UniformType type)
+	{
+		switch (type)
+		{
+			case igfx::UniformType::FLOAT: return GL_FLOAT;
+			case igfx::UniformType::FLOAT_VEC2: return GL_FLOAT_VEC2;
+			case igfx::UniformType::FLOAT_VEC3: return GL_FLOAT_VEC3;
+			case igfx::UniformType::FLOAT_VEC4: return GL_FLOAT_VEC4;
+			case igfx::UniformType::INT: return GL_INT;
+			case igfx::UniformType::INT_VEC2: return GL_INT_VEC2;
+			case igfx::UniformType::INT_VEC3: return GL_INT_VEC3;
+			case igfx::UniformType::INT_VEC4: return GL_INT_VEC4;
+			case igfx::UniformType::UINT: return GL_UNSIGNED_INT;
+			case igfx::UniformType::UINT_VEC2: return GL_UNSIGNED_INT_VEC2;
+			case igfx::UniformType::UINT_VEC3: return GL_UNSIGNED_INT_VEC3;
+			case igfx::UniformType::UINT_VEC4: return GL_UNSIGNED_INT_VEC4;
+			case igfx::UniformType::BOOL: return GL_BOOL;
+			case igfx::UniformType::FLOAT_MAT2: return GL_FLOAT_MAT2;
+			case igfx::UniformType::FLOAT_MAT3: return GL_FLOAT_MAT3;
+			case igfx::UniformType::FLOAT_MAT4: return GL_FLOAT_MAT4;
+			case igfx::UniformType::SAMPLER_2D: return GL_SAMPLER_2D;
+			case igfx::UniformType::UNKNOWN: break;
+		}
+		return GL_FLOAT;
+	}
+}
+#endif
+
+
 ///////////////////////////////////////////////////////////
 // CONSTRUCTORS and DESTRUCTOR
 ///////////////////////////////////////////////////////////
 
+#ifdef WITH_RHI
+GLUniform::GLUniform(const igfx::UniformInfo &info, GLint blockIndex)
+    : index_(0), blockIndex_(blockIndex), location_(-1), size_(info.arraySize), type_(uniformTypeToGL(info.type)), offset_(info.offset)
+{
+	strncpy(name_, info.name.data(), MaxNameLength - 1);
+	name_[MaxNameLength - 1] = '\0';
+}
+
+#endif
 GLUniform::GLUniform()
     : index_(0), blockIndex_(-1), location_(-1), size_(0), type_(GL_FLOAT), offset_(0)
 {

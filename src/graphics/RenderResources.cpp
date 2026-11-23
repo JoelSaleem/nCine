@@ -624,12 +624,16 @@ void RenderResources::create()
 			FATAL_ASSERT_MSG_X(rhiDefaultPrograms_[index]->linkStatus() == igfx::IShaderProgram::Status::LINKED, "Failed to compile shader program \"%s\"", shaderToCompile.objectLabel);
 			if (reflectionDump)
 				dumpReflection(reflectionDump, shaderToCompile.objectLabel, *rhiDefaultPrograms_[index]);
+			// Materials keep using `GLShaderProgram`, here only a description of the Vulkan program
+			shaderToCompile.shaderProgram = nctl::makeUnique<GLShaderProgram>(*rhiDefaultPrograms_[index]);
 		}
 		if (reflectionDump)
+		{
 			fclose(reflectionDump);
-		LOGI("Rendering resources created, Vulkan programs only");
-		return;
+			reflectionDump = nullptr;
+		}
 	}
+	else
 #endif
 	for (unsigned int i = 0; i < numShaderToCompile; i++)
 	{
