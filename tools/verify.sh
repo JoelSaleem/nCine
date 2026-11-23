@@ -25,6 +25,7 @@ RUNNER=()
 if [ ! -e /dev/dri ] && [ -z "${VERIFY_FORCE_GPU:-}" ]; then
 	export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 	export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+	export SDL_VIDEO_X11_FORCE_EGL=0 # SDL2 otherwise picks EGL on Xvfb and GLX-built GLEW fails to init
 	RUNNER=(xvfb-run -a -s "-screen 0 1920x1080x24")
 	ADVISORY=--advisory
 fi
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
 		--backend) BACKEND="$2"; shift 2;;
 		--build) BUILD="$2"; shift 2;;
 		--only) ONLY="$2"; shift 2;;
+		--goldens) GOLDENS="$2"; shift 2;; # one set per windowing backend, e.g. goldens/sdl2
 		*) echo "unknown argument: $1"; exit 2;;
 	esac
 done
@@ -122,6 +124,6 @@ case "$cmd" in
 		perf_json "$TMPD/perf_sample.json"
 		"$PY" tools/perf_check.py "$GOLDENS/perf_baseline.json" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
 	*)
-		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c]"
+		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
 		exit 2;;
 esac

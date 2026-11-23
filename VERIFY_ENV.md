@@ -27,7 +27,9 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 
 - `NCINE_CAPTURE` switches the engine `Clock` to virtual time (+1/60 s per frame) and fixes the RNG seeds.
 - Goldens are frame 30 (0.5 s virtual). `capture-goldens` captures twice; mismatches go to `goldens/nondeterministic.txt` and `check` reports them as SKIP.
-- Currently nondeterministic: `apptest_filebrowser` (lists the live filesystem).
+- Goldens are per windowing backend: `goldens/` = GLFW, `goldens/sdl2/` = SDL2 (`--goldens goldens/sdl2`). They differ by ±1 in ImGui apps (different platform timers) and in backend-specific text (multitouch, scaling).
+- Currently nondeterministic: GLFW `apptest_filebrowser` (lists the live filesystem); SDL2 `apptest_filebrowser`, `apptest_audio`.
+- SDL2 on Xvfb picks EGL unless `SDL_VIDEO_X11_FORCE_EGL=0`, and GLX-built GLEW then fails (`GLEW error: Unknown error`); `verify.sh` sets it.
 - ImGui under GLFW still reads `glfwGetTime()`; stable at frame 30 so far, revisit if a GUI apptest flakes.
 
 ## Perf method
