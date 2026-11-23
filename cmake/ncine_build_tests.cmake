@@ -70,6 +70,14 @@ if(NCINE_BUILD_TESTS)
 	endif()
 
 	add_subdirectory(tests)
+
+	if(NCINE_WITH_VULKAN AND NCINE_PREFERRED_BACKEND STREQUAL "GLFW")
+		# Standalone smoke test of the Vulkan backend, with its own GLFW window
+		add_executable(vktest_clear ${CMAKE_SOURCE_DIR}/tests/vktest_clear.cpp)
+		target_link_libraries(vktest_clear PRIVATE ncine GLFW::GLFW Vulkan::Vulkan)
+		target_include_directories(vktest_clear PRIVATE ${CMAKE_SOURCE_DIR}/src/include ${CMAKE_SOURCE_DIR}/include/ncine)
+		set_target_properties(vktest_clear PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+	endif()
 	# Don't build and install srctests on a Lua distribution for Emscripten
 	if(NOT NCINE_DYNAMIC_LIBRARY AND NOT "${NCINE_OPTIONS_PRESETS}" STREQUAL "LuaDist")
 		add_subdirectory(src/tests)

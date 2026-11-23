@@ -123,7 +123,10 @@ case "$cmd" in
 		[ "$cmd" = all-perf ] && ONLY=""
 		perf_json "$TMPD/perf_sample.json"
 		"$PY" tools/perf_check.py "$GOLDENS/perf_baseline.json" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
+	vk-smoke)
+		# Vulkan backend smoke test: swapchain clear + readback, fails on any validation message
+		"${RUNNER[@]}" "$BUILD/tests/vktest_clear" ${ONLY:+"$ONLY"};;
 	*)
-		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
+		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf|vk-smoke} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
 		exit 2;;
 esac

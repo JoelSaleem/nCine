@@ -32,6 +32,11 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 - SDL2 on Xvfb picks EGL unless `SDL_VIDEO_X11_FORCE_EGL=0`, and GLX-built GLEW then fails (`GLEW error: Unknown error`); `verify.sh` sets it.
 - ImGui under GLFW still reads `glfwGetTime()`; stable at frame 30 so far, revisit if a GUI apptest flakes.
 
+## RHI and Vulkan builds
+
+- GL through igfx: same configure plus `-DNCINE_RHI=ON` (`build-glrhi`, `build-sdl2-glrhi`), then `./tools/verify.sh all --backend gl-rhi --build build-glrhi`.
+- Vulkan: plus `-DNCINE_WITH_VULKAN=ON` (`build-vk`, Debug for asserts + validation). Goldens are Release captures: Debug builds differ in `apptest_jobsystem` (extra debug-statistics window), so golden-check Release builds only. Smoke test: `./tools/verify.sh vk-smoke --build build-vk` (clear + readback on lavapipe, exits non-zero on any validation message). Needs `vulkan-validation-layers`; VMA 3.5.0 is vendored in `src/graphics/vulkan/vk_mem_alloc.h`.
+
 ## Perf method
 
 `frame_ms_avg = (wall time to frame 330 - wall time to frame 30) / 300`, so startup cancels out. Advisory on this host.

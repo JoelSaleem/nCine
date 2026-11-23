@@ -45,6 +45,8 @@ endif()
 
 option(NCINE_WITH_SCENEGRAPH "Enable the scenegraph, with nodes and render commands" ON)
 option(NCINE_RHI "Route rendering through the igfx render hardware interface (work in progress)" OFF)
+include(CMakeDependentOption)
+cmake_dependent_option(NCINE_WITH_VULKAN "Build the Vulkan backend of the render hardware interface (work in progress)" OFF "NCINE_RHI" OFF)
 option(NCINE_WITH_ALLOCATORS "Enable the custom memory allocators" OFF)
 option(NCINE_WITH_IMGUI "Enable the integration with Dear ImGui" ON)
 option(NCINE_WITH_NUKLEAR "Enable the integration with Nuklear" OFF)
