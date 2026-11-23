@@ -130,10 +130,15 @@ case "$cmd" in
 		[ "$cmd" = all-perf ] && ONLY=""
 		perf_json "$TMPD/perf_sample.json"
 		"$PY" tools/perf_check.py "$GOLDENS/perf_baseline.json" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
+	compare-reflection)
+		# Same binary, both backends: the default programs' Vulkan reflection must be compatible with OpenGL's
+		NCINE_DUMP_REFLECTION="$TMPD/gl.txt" NCINE_CAPTURE="$TMPD/gl.png" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/apptest_clear" >/dev/null 2>&1 || true
+		NCINE_GFX_BACKEND=vulkan NCINE_DUMP_REFLECTION="$TMPD/vk.txt" NCINE_CAPTURE="$TMPD/vk.png" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/apptest_clear" >/dev/null 2>&1 || true
+		"$PY" tools/compare_reflection.py "$TMPD/gl.txt" "$TMPD/vk.txt";;
 	vk-smoke)
 		# Vulkan backend smoke test: swapchain clear + readback, fails on any validation message
 		"${RUNNER[@]}" "$BUILD/tests/vktest_clear" ${ONLY:+"$ONLY"};;
 	*)
-		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf|vk-smoke} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
+		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf|vk-smoke|compare-reflection} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
 		exit 2;;
 esac

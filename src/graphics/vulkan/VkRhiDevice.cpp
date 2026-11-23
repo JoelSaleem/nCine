@@ -802,10 +802,9 @@ nctl::UniquePtr<igfx::ITexture> VkRhiDevice::createTexture(const igfx::TextureDe
 	return nctl::UniquePtr<igfx::ITexture>(nullptr);
 }
 
-nctl::UniquePtr<igfx::IShaderProgram> VkRhiDevice::createShaderProgram(const char *, const char *, const char *)
+nctl::UniquePtr<igfx::IShaderProgram> VkRhiDevice::createShaderProgram(const char *vertexSource, const char *fragmentSource, const char *name)
 {
-	notImplemented("createShaderProgram()");
-	return nctl::UniquePtr<igfx::IShaderProgram>(nullptr);
+	return nctl::makeUnique<VkRhiShaderProgram>(device_, vertexSource, fragmentSource, name);
 }
 
 nctl::UniquePtr<igfx::IPipeline> VkRhiDevice::createPipeline(const igfx::PipelineDesc &)

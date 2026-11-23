@@ -51,6 +51,39 @@ class VkRhiBuffer : public igfx::IBuffer
 	uint8_t *mapped_ = nullptr;
 };
 
+/// GLSL compiled to SPIR-V by glslang with relaxed Vulkan rules, so OpenGL-style shaders work unchanged:
+/// loose uniforms become members of a default uniform block and `gl_VertexID` maps to `gl_VertexIndex`
+class VkRhiShaderProgram : public igfx::IShaderProgram
+{
+  public:
+	VkRhiShaderProgram(VkDevice device, const char *vertexSource, const char *fragmentSource, const char *name);
+	~VkRhiShaderProgram() override;
+
+	Status linkStatus() const override { return status_; }
+	const nctl::String &infoLog() const override { return infoLog_; }
+	const nctl::Array<igfx::UniformInfo> &uniforms() const override { return uniforms_; }
+	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override { return uniformBlocks_; }
+	const nctl::Array<igfx::AttributeInfo> &attributes() const override { return attributes_; }
+	int looseUniformsSize() const override { return looseUniformsSize_; }
+
+	/// Descriptor binding of the default uniform block, -1 when the program has no loose uniforms
+	inline int looseUniformsBinding() const { return looseUniformsBinding_; }
+	inline VkShaderModule vertexModule() const { return vertexModule_; }
+	inline VkShaderModule fragmentModule() const { return fragmentModule_; }
+
+  private:
+	VkDevice device_;
+	Status status_ = Status::NOT_COMPILED;
+	nctl::String infoLog_ = nctl::String(256);
+	nctl::Array<igfx::UniformInfo> uniforms_ = nctl::Array<igfx::UniformInfo>(16);
+	nctl::Array<igfx::UniformBlockInfo> uniformBlocks_ = nctl::Array<igfx::UniformBlockInfo>(4);
+	nctl::Array<igfx::AttributeInfo> attributes_ = nctl::Array<igfx::AttributeInfo>(8);
+	int looseUniformsSize_ = 0;
+	int looseUniformsBinding_ = -1;
+	VkShaderModule vertexModule_ = VK_NULL_HANDLE;
+	VkShaderModule fragmentModule_ = VK_NULL_HANDLE;
+};
+
 class VkRhiCommandList : public igfx::ICommandList
 {
   public:

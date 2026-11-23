@@ -230,6 +230,10 @@ class RenderResources
 
 	static const unsigned int NumDefaultShaderPrograms = 20;
 	static nctl::UniquePtr<GLShaderProgram> defaultShaderPrograms_[NumDefaultShaderPrograms];
+#ifdef WITH_RHI
+	/// Default programs compiled by a non-OpenGL device, same indices as `defaultShaderPrograms_`
+	static nctl::UniquePtr<igfx::IShaderProgram> rhiDefaultPrograms_[NumDefaultShaderPrograms];
+#endif
 	/// Hash map from a shader program pointer to the pointer of its batched version
 	static nctl::HashMap<const GLShaderProgram *, GLShaderProgram *> batchedShaders_;
 

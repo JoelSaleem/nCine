@@ -4,6 +4,7 @@
 #ifdef WITH_VULKAN
 	#include "VkRhiDevice.h"
 #endif
+#include <cstdio>
 #include <cstddef> // for `offsetof()`
 #include <nctl/HashMapIterator.h>
 #include <nctl/StaticString.h>
@@ -30,6 +31,29 @@
 namespace ncine {
 
 namespace {
+#ifdef WITH_RHI
+	/// `NCINE_DUMP_REFLECTION=<file>` writes the reflection of every default program, to compare backends
+	void dumpReflection(FILE *file, const char *label, const igfx::IShaderProgram &program)
+	{
+		fprintf(file, "program %s\n", label);
+		const nctl::Array<igfx::UniformBlockInfo> &blocks = program.uniformBlocks();
+		for (const igfx::UniformBlockInfo &block : blocks)
+			fprintf(file, "block %s %d\n", block.name.data(), block.size);
+		for (const igfx::UniformInfo &uniform : program.uniforms())
+		{
+			if (uniform.type == igfx::UniformType::SAMPLER_2D)
+				fprintf(file, "sampler %s\n", uniform.name.data());
+			else if (uniform.blockIndex < 0)
+				fprintf(file, "loose %s %d %d\n", uniform.name.data(), static_cast<int>(uniform.type), uniform.arraySize);
+			else
+				fprintf(file, "member %s.%s %d %d %d\n", blocks[uniform.blockIndex].name.data(), uniform.name.data(),
+				        static_cast<int>(uniform.type), uniform.arraySize, uniform.offset);
+		}
+		for (const igfx::AttributeInfo &attribute : program.attributes())
+			fprintf(file, "attribute %s %d\n", attribute.name.data(), static_cast<int>(attribute.type));
+	}
+#endif
+
 	inline bool usingVulkan()
 	{
 #ifdef WITH_RHI
@@ -56,6 +80,7 @@ nctl::UniquePtr<igfx::IDevice> RenderResources::rhiDevice_;
 igfx::ICommandList *RenderResources::rhiCommandList_ = nullptr;
 nctl::HashMap<uint64_t, igfx::IPipeline *> RenderResources::rhiPipelines_(64);
 nctl::Array<nctl::UniquePtr<igfx::IPipeline>> RenderResources::rhiPipelineStorage_(64);
+nctl::UniquePtr<igfx::IShaderProgram> RenderResources::rhiDefaultPrograms_[NumDefaultShaderPrograms];
 #endif
 nctl::UniquePtr<BinaryShaderCache> RenderResources::binaryShaderCache_;
 nctl::UniquePtr<RenderBuffersManager> RenderResources::buffersManager_;
@@ -126,7 +151,8 @@ void RenderResources::compileShader(ShaderProgramCompileInfo &shaderToCompile)
 	const uint64_t shaderHashSum = binaryShaderCache_->isEnabled() ? shaderToCompile.vertexInfo.hash + shaderToCompile.fragmentInfo.hash : 0;
 
 	const AppConfiguration &appCfg = theApplication().appConfiguration();
-	const GLShaderProgram::QueryPhase cfgQueryPhase = appCfg.graphics.opengl.deferShaderQueries
+	// A reflection dump needs the introspection data right after linking
+	const GLShaderProgram::QueryPhase cfgQueryPhase = (appCfg.graphics.opengl.deferShaderQueries && getenv("NCINE_DUMP_REFLECTION") == nullptr)
 	        ? GLShaderProgram::QueryPhase::DEFERRED
 	        : GLShaderProgram::QueryPhase::IMMEDIATE;
 
@@ -515,11 +541,6 @@ void RenderResources::create()
 	renderBatcher_ = nctl::makeUnique<RenderBatcher>();
 	defaultCamera_ = nctl::makeUnique<Camera>();
 	currentCamera_ = defaultCamera_.get();
-	if (usingVulkan())
-	{
-		LOGI("Rendering resources created, without shader programs on Vulkan yet");
-		return;
-	}
 
 	fillDefaultShaderInfos();
 
@@ -589,6 +610,27 @@ void RenderResources::create()
 
 	const unsigned int numShaderToCompile = (sizeof(shadersToCompile) / sizeof(*shadersToCompile));
 	FATAL_ASSERT(numShaderToCompile <= NumDefaultShaderPrograms);
+#ifdef WITH_RHI
+	const char *reflectionDumpPath = getenv("NCINE_DUMP_REFLECTION");
+	FILE *reflectionDump = (reflectionDumpPath != nullptr) ? fopen(reflectionDumpPath, "w") : nullptr;
+	if (usingVulkan())
+	{
+		for (unsigned int i = 0; i < numShaderToCompile; i++)
+		{
+			const ShaderProgramCompileInfo &shaderToCompile = shadersToCompile[i];
+			FATAL_ASSERT_MSG(shaderToCompile.vertexInfo.shaderString && shaderToCompile.fragmentInfo.shaderString, "Vulkan needs the embedded default shaders");
+			const unsigned int index = static_cast<unsigned int>(&shaderToCompile.shaderProgram - defaultShaderPrograms_);
+			rhiDefaultPrograms_[index] = rhiDevice_->createShaderProgram(shaderToCompile.vertexInfo.shaderString, shaderToCompile.fragmentInfo.shaderString, shaderToCompile.objectLabel);
+			FATAL_ASSERT_MSG_X(rhiDefaultPrograms_[index]->linkStatus() == igfx::IShaderProgram::Status::LINKED, "Failed to compile shader program \"%s\"", shaderToCompile.objectLabel);
+			if (reflectionDump)
+				dumpReflection(reflectionDump, shaderToCompile.objectLabel, *rhiDefaultPrograms_[index]);
+		}
+		if (reflectionDump)
+			fclose(reflectionDump);
+		LOGI("Rendering resources created, Vulkan programs only");
+		return;
+	}
+#endif
 	for (unsigned int i = 0; i < numShaderToCompile; i++)
 	{
 		ShaderProgramCompileInfo &shaderToCompile = shadersToCompile[i];
@@ -609,6 +651,14 @@ void RenderResources::create()
 	#endif
 	}
 
+#ifdef WITH_RHI
+	if (reflectionDump)
+	{
+		for (unsigned int i = 0; i < numShaderToCompile; i++)
+			dumpReflection(reflectionDump, shadersToCompile[i].objectLabel, *shadersToCompile[i].shaderProgram);
+		fclose(reflectionDump);
+	}
+#endif
 	registerDefaultBatchedShaders();
 
 	// Calculating a default projection matrix for all shader programs
@@ -685,6 +735,10 @@ void RenderResources::dispose()
 #if WITH_SCENEGRAPH
 	for (nctl::UniquePtr<GLShaderProgram> &shaderProgram : defaultShaderPrograms_)
 		shaderProgram.reset(nullptr);
+	#ifdef WITH_RHI
+	for (nctl::UniquePtr<igfx::IShaderProgram> &shaderProgram : rhiDefaultPrograms_)
+		shaderProgram.reset(nullptr);
+	#endif
 
 	ASSERT(cameraUniformDataMap_.isEmpty());
 
