@@ -13,3 +13,4 @@ build/
 docs/
 Doxyfile
 failures/
+build-*/
