@@ -9,6 +9,7 @@
 #include <nctl/HashMapIterator.h>
 #include <nctl/StaticString.h>
 #include "RenderResources.h"
+#include "IFile.h"
 #include "BinaryShaderCache.h"
 #include "RenderBuffersManager.h"
 #include "RenderVaoPool.h"
@@ -110,6 +111,33 @@ Viewport *RenderResources::currentViewport_ = nullptr;
 /*! \note If not initially provided, the new computed hashes will be written back in the `ShaderCompileInfo` structures */
 void RenderResources::compileShader(ShaderProgramCompileInfo &shaderToCompile)
 {
+#ifdef WITH_RHI
+	if (usingVulkan())
+	{
+		// Same sources (from strings or files), compiled by the Vulkan device and described in place
+		// (raw buffers: assigning a C string to `nctl::String` stops at `MaxCStringLength`)
+		const char *sources[2] = { shaderToCompile.vertexInfo.shaderString, shaderToCompile.fragmentInfo.shaderString };
+		const char *files[2] = { shaderToCompile.vertexInfo.shaderFile, shaderToCompile.fragmentInfo.shaderFile };
+		nctl::UniquePtr<char[]> fileSources[2];
+		for (unsigned int i = 0; i < 2; i++)
+		{
+			if (sources[i] == nullptr && files[i] != nullptr)
+			{
+				nctl::UniquePtr<IFile> file = IFile::createFileHandle(files[i]);
+				file->open(IFile::OpenMode::READ);
+				if (file->isOpened())
+				{
+					fileSources[i] = nctl::makeUnique<char[]>(file->size() + 1); // zeroed, so terminated
+					file->read(fileSources[i].get(), file->size());
+					sources[i] = fileSources[i].get();
+				}
+			}
+		}
+		FATAL_ASSERT_MSG_X(sources[0] && sources[1], "Cannot read the sources of shader program \"%s\"", shaderToCompile.objectLabel ? shaderToCompile.objectLabel : "");
+		shaderToCompile.shaderProgram->describe(rhiDevice_->createShaderProgram(sources[0], sources[1], shaderToCompile.objectLabel));
+		return;
+	}
+#endif
 	ZoneScoped;
 	if (shaderToCompile.objectLabel)
 	{
@@ -529,7 +557,7 @@ void RenderResources::create()
 	// `create()` can be called after `createMinimal()`
 
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
-	if (binaryShaderCache_ == nullptr && usingVulkan() == false)
+	if (binaryShaderCache_ == nullptr)
 		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
 	if (buffersManager_ == nullptr)
 		buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
@@ -727,11 +755,10 @@ void RenderResources::createMinimal()
 	ASSERT(hash64_ == nullptr);
 
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
+	// Never available without OpenGL program binaries, but callers can always ask it
+	binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache && usingVulkan() == false, openglCfg.shaderCacheDirname.data());
 	if (usingVulkan() == false)
-	{
-		binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache, openglCfg.shaderCacheDirname.data());
 		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
-	}
 	hash64_ = nctl::makeUnique<Hash64>();
 #ifdef WITH_RHI
 	#ifdef WITH_VULKAN

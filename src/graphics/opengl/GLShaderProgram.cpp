@@ -38,6 +38,10 @@ GLShaderProgram::GLShaderProgram(QueryPhase queryPhase)
       uniformsSize_(0), uniformBlocksSize_(0), uniforms_(UniformsInitialSize),
       uniformBlocks_(UniformBlocksInitialSize), attributes_(AttributesInitialSize)
 {
+#ifdef WITH_RHI
+	if (igfx::isVulkanSelected())
+		return; // no OpenGL object, `RenderResources::compileShader()` describes a Vulkan program instead
+#endif
 	glHandle_ = glCreateProgram();
 
 	if (RenderResources::binaryShaderCache().isAvailable())
@@ -131,6 +135,10 @@ bool GLShaderProgram::isLinked() const
 
 unsigned int GLShaderProgram::retrieveInfoLogLength() const
 {
+#ifdef WITH_RHI
+	if (rhiProgram_)
+		return rhiProgram_->infoLog().length();
+#endif
 	GLint length = 0;
 	glGetProgramiv(glHandle_, GL_INFO_LOG_LENGTH, &length);
 
@@ -139,6 +147,13 @@ unsigned int GLShaderProgram::retrieveInfoLogLength() const
 
 void GLShaderProgram::retrieveInfoLog(nctl::String &infoLog) const
 {
+#ifdef WITH_RHI
+	if (rhiProgram_)
+	{
+		infoLog = rhiProgram_->infoLog();
+		return;
+	}
+#endif
 	GLint length = 0;
 	glGetProgramiv(glHandle_, GL_INFO_LOG_LENGTH, &length);
 

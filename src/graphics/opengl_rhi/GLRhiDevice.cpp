@@ -258,6 +258,31 @@ GLShaderProgram::GLShaderProgram(igfx::IShaderProgram &rhiProgram)
       uniformsSize_(0), uniformBlocksSize_(0), uniforms_(UniformsInitialSize),
       uniformBlocks_(UniformBlocksInitialSize), attributes_(AttributesInitialSize), rhiProgram_(&rhiProgram)
 {
+	buildFromRhi(rhiProgram);
+}
+
+void GLShaderProgram::describe(nctl::UniquePtr<igfx::IShaderProgram> rhiProgram)
+{
+	uniforms_.clear();
+	uniformBlocks_.clear();
+	attributes_.clear();
+	attributeLocations_.clear();
+	vertexFormat_.reset();
+	uniformsSize_ = 0;
+	uniformBlocksSize_ = 0;
+	ownedRhiProgram_ = nctl::move(rhiProgram);
+	rhiProgram_ = ownedRhiProgram_.get();
+	if (rhiProgram_ == nullptr || rhiProgram_->linkStatus() != igfx::IShaderProgram::Status::LINKED)
+	{
+		status_ = (rhiProgram_ && rhiProgram_->linkStatus() == igfx::IShaderProgram::Status::COMPILATION_FAILED) ? Status::COMPILATION_FAILED : Status::LINKING_FAILED;
+		return;
+	}
+	status_ = Status::LINKED_WITH_INTROSPECTION;
+	buildFromRhi(*rhiProgram_);
+}
+
+void GLShaderProgram::buildFromRhi(igfx::IShaderProgram &rhiProgram)
+{
 	introspection_ = Introspection::ENABLED;
 	const nctl::Array<igfx::UniformInfo> &uniforms = rhiProgram.uniforms();
 	// Samplers are descriptors on Vulkan, not loose values, so they get no cache

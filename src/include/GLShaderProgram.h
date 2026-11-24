@@ -59,6 +59,8 @@ class GLShaderProgram
 	explicit GLShaderProgram(igfx::IShaderProgram &rhiProgram);
 	/// The program that draws, itself on OpenGL or the one this describes
 	inline igfx::IShaderProgram &rhiProgram() { return rhiProgram_ ? *rhiProgram_ : *this; }
+	/// Describes (and owns) another backend's program in place, so pointers to this one stay valid across reloads
+	void describe(nctl::UniquePtr<igfx::IShaderProgram> rhiProgram);
 #endif
 
 	/// Initializes a shader program from a binary shader file
@@ -145,6 +147,8 @@ class GLShaderProgram
 	nctl::UniquePtr<uint8_t[]> rhiUniformShadow_;
 	uint32_t rhiUniformShadowValid_ = 0;
 	igfx::IShaderProgram *rhiProgram_ = nullptr;
+	nctl::UniquePtr<igfx::IShaderProgram> ownedRhiProgram_;
+	void buildFromRhi(igfx::IShaderProgram &rhiProgram);
 	mutable bool reflectionBuilt_ = false;
 	mutable nctl::String rhiInfoLog_;
 	mutable nctl::Array<igfx::UniformInfo> rhiUniforms_ = nctl::Array<igfx::UniformInfo>(MaxNumUniforms);
