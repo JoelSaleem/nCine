@@ -203,7 +203,7 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 		GLUniformBlockCache *batchBlock = batchCommand->material().uniformBlock(uniformBlockName.data());
 		ASSERT(batchBlock);
 		if (batchBlock)
-			nonInstancesBlocksSize += uniformBlockCache.size() - uniformBlockCache.alignAmount();
+			nonInstancesBlocksSize += uniformBlockCache.size(); // with the offset alignment, as its used size
 	}
 
 	// Set to true if at least one command in the batch has indices or forced by a rendering settings
@@ -226,7 +226,10 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 	}
 	nextStart = it;
 
-	batchCommand->material().setUniformsDataPointer(acquireMemory(nonBlockUniformsSize + nonInstancesBlocksSize + instancesBlockSize));
+	unsigned char *batchMemory = acquireMemory(nonBlockUniformsSize + nonInstancesBlocksSize + instancesBlockSize);
+	batchCommand->material().setUniformsDataPointer(batchMemory);
+	// Only the used part of the instances block has been acquired: it goes last, whatever the block order in the material
+	unsigned char *blockPointer = batchMemory + nonBlockUniformsSize;
 	// Copying data for non-instances uniform blocks from the first command in the batch
 	for (const GLUniformBlockCache &uniformBlockCache : allUniformBlocks)
 	{
@@ -235,10 +238,13 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 			continue;
 
 		GLUniformBlockCache *batchBlock = batchCommand->material().uniformBlock(uniformBlockName.data());
+		batchBlock->setDataPointer(blockPointer);
+		blockPointer += uniformBlockCache.size();
 		const bool dataCopied = batchBlock->copyData(uniformBlockCache.dataPointer());
 		ASSERT(dataCopied);
 		batchBlock->setUsedSize(uniformBlockCache.usedSize());
 	}
+	instancesBlock->setDataPointer(blockPointer);
 
 	// Setting sampler uniforms for GL_TEXTURE* units
 	const GLShaderUniforms::UniformHashMapType allUniforms = refCommand->material().allUniforms();
