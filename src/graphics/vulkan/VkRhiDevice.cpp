@@ -231,9 +231,10 @@ void VkRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)
 
 void VkRhiCommandList::bindVertexBuffer(igfx::IBuffer &buffer, unsigned long offset)
 {
-	const VkBuffer handle = static_cast<VkRhiBuffer &>(buffer).handle();
-	const VkDeviceSize vkOffset = offset;
-	vkCmdBindVertexBuffers(commandBuffer_, 0, 1, &handle, &vkOffset);
+	// Same buffer for per-vertex (binding 0) and per-instance (binding 1) attributes
+	const VkBuffer handles[2] = { static_cast<VkRhiBuffer &>(buffer).handle(), static_cast<VkRhiBuffer &>(buffer).handle() };
+	const VkDeviceSize offsets[2] = { offset, offset };
+	vkCmdBindVertexBuffers(commandBuffer_, 0, 2, handles, offsets);
 }
 
 void VkRhiCommandList::bindIndexBuffer(igfx::IBuffer &buffer, unsigned long offset, igfx::IndexType type)

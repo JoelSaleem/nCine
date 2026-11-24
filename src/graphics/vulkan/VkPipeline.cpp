@@ -99,19 +99,26 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	shaderStages[1].module = program_->fragmentModule();
 	shaderStages[1].pName = "main";
 
-	// One interleaved vertex buffer at binding 0, as the renderer's managed VBOs are laid out
-	VkVertexInputBindingDescription vertexBinding = { 0, desc.vertexLayout.stride, desc.vertexLayout.perInstance ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX };
+	// The renderer's vertex buffer feeds binding 0 per vertex and binding 1 per instance (both bound to it)
 	nctl::StaticArray<VkVertexInputAttributeDescription, igfx::VertexLayout::MaxAttributes> vertexAttributes;
+	bool hasPerVertex = false;
+	bool hasPerInstance = false;
 	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
-		vertexAttributes.pushBack({ attribute.location, 0, vertexFormatToVk(attribute.format), attribute.offset });
-	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-	if (vertexAttributes.isEmpty() == false)
 	{
-		vertexInput.vertexBindingDescriptionCount = 1;
-		vertexInput.pVertexBindingDescriptions = &vertexBinding;
-		vertexInput.vertexAttributeDescriptionCount = vertexAttributes.size();
-		vertexInput.pVertexAttributeDescriptions = vertexAttributes.data();
+		vertexAttributes.pushBack({ attribute.location, attribute.perInstance ? 1u : 0u, vertexFormatToVk(attribute.format), attribute.offset });
+		hasPerVertex = hasPerVertex || (attribute.perInstance == false);
+		hasPerInstance = hasPerInstance || attribute.perInstance;
 	}
+	nctl::StaticArray<VkVertexInputBindingDescription, 2> vertexBindings;
+	if (hasPerVertex)
+		vertexBindings.pushBack({ 0, desc.vertexLayout.stride, VK_VERTEX_INPUT_RATE_VERTEX });
+	if (hasPerInstance)
+		vertexBindings.pushBack({ 1, desc.vertexLayout.instanceStride, VK_VERTEX_INPUT_RATE_INSTANCE });
+	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+	vertexInput.vertexBindingDescriptionCount = vertexBindings.size();
+	vertexInput.pVertexBindingDescriptions = vertexBindings.data();
+	vertexInput.vertexAttributeDescriptionCount = vertexAttributes.size();
+	vertexInput.pVertexAttributeDescriptions = vertexAttributes.data();
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
 	inputAssembly.topology = topologyToVk(desc.topology);

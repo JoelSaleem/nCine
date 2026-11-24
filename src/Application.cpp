@@ -69,6 +69,42 @@ namespace {
 	}
 
 	static nctl::StaticString<256> appInfoString;
+
+#ifdef WITH_RHI
+	/// The capabilities applications can query, answered from the render hardware interface limits on Vulkan
+	class RhiGfxCapabilities : public IGfxCapabilities
+	{
+	  public:
+		explicit RhiGfxCapabilities(const igfx::Limits &limits)
+		{
+			for (int &value : values_)
+				value = 0;
+			values_[GLIntValues::MAX_TEXTURE_SIZE] = limits.maxTextureSize;
+			values_[GLIntValues::MAX_TEXTURE_IMAGE_UNITS] = 4; // the material texture units
+			values_[GLIntValues::UNCLAMPED_MAX_UNIFORM_BLOCK_SIZE] = limits.maxUniformBlockSize;
+			values_[GLIntValues::MAX_UNIFORM_BLOCK_SIZE] = (limits.maxUniformBlockSize < 64 * 1024) ? limits.maxUniformBlockSize : 64 * 1024;
+			values_[GLIntValues::MAX_UNIFORM_BUFFER_BINDINGS] = 8; // the bindings Vulkan programs reserve for blocks
+			values_[GLIntValues::MAX_VERTEX_UNIFORM_BLOCKS] = 8;
+			values_[GLIntValues::MAX_FRAGMENT_UNIFORM_BLOCKS] = 8;
+			values_[GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT] = limits.uniformBufferOffsetAlignment;
+			values_[GLIntValues::MAX_VERTEX_ATTRIB_STRIDE] = 2048; // the minimum Vulkan guarantees
+			values_[GLIntValues::MAX_COLOR_ATTACHMENTS] = 1;
+			infoStrings_.vendor = reinterpret_cast<const unsigned char *>("nCine");
+			infoStrings_.renderer = reinterpret_cast<const unsigned char *>("Vulkan");
+			infoStrings_.glVersion = reinterpret_cast<const unsigned char *>("");
+			infoStrings_.glslVersion = reinterpret_cast<const unsigned char *>("");
+		}
+		int glVersion(GLVersion) const override { return 0; }
+		const GlInfoStrings &glInfoStrings() const override { return infoStrings_; }
+		int value(GLIntValues::Enum valueName) const override { return (valueName < GLIntValues::COUNT) ? values_[valueName] : 0; }
+		int arrayValue(GLArrayIntValues::Enum, unsigned int) const override { return 0; }
+		bool hasExtension(GLExtensions::Enum) const override { return false; }
+
+	  private:
+		int values_[GLIntValues::COUNT];
+		GlInfoStrings infoStrings_;
+	};
+#endif
 	static FrameCapture::Config captureConfig;
 
 	/// Saves the back buffer as RGB8, through the screen viewport when there is one
@@ -354,6 +390,10 @@ void Application::initCommon()
 
 	// Create a minimal set of render resources before compiling the first shader
 	RenderResources::createMinimal(); // they are required for rendering even without a scenegraph
+#ifdef WITH_RHI
+	if (usingVulkan())
+		theServiceLocator().registerGfxCapabilities(nctl::makeUnique<RhiGfxCapabilities>(RenderResources::rhiDevice().limits()));
+#endif
 
 #ifdef WITH_IMGUI
 	if (usingVulkan() == false)

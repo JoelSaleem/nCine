@@ -178,14 +178,17 @@ struct VertexAttribute
 	uint32_t location = 0;
 	VertexFormat format = VertexFormat::FLOAT2;
 	uint32_t offset = 0;
+	/// Advances once per instance instead of once per vertex (an OpenGL divisor of one)
+	bool perInstance = false;
 };
 
+/// Interleaved attributes read from one vertex buffer; per-vertex and per-instance ones have their own stride
 struct VertexLayout
 {
 	static const unsigned int MaxAttributes = 8;
 
 	uint32_t stride = 0;
-	bool perInstance = false;
+	uint32_t instanceStride = 0;
 	nctl::StaticArray<VertexAttribute, MaxAttributes> attributes;
 };
 

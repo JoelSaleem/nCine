@@ -309,7 +309,11 @@ igfx::VertexLayout GLShaderProgram::vertexLayout()
 			case GL_INT: vertexAttribute.format = igfx::VertexFormat::INT1; break;
 			default: vertexAttribute.format = igfx::VertexFormat::UINT1; break;
 		}
-		layout.stride = static_cast<uint32_t>(attribute->stride());
+		vertexAttribute.perInstance = (attribute->divisor() > 0);
+		if (vertexAttribute.perInstance)
+			layout.instanceStride = static_cast<uint32_t>(attribute->stride());
+		else
+			layout.stride = static_cast<uint32_t>(attribute->stride());
 		layout.attributes.pushBack(vertexAttribute);
 	}
 	return layout;

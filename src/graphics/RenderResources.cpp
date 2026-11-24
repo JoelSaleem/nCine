@@ -677,10 +677,11 @@ void RenderResources::create()
 #ifdef WITH_RHI
 igfx::IPipeline &RenderResources::rhiPipeline(const igfx::PipelineDesc &desc)
 {
-	uint64_t layoutHash = static_cast<uint64_t>(desc.vertexLayout.stride) | (static_cast<uint64_t>(desc.vertexLayout.perInstance) << 32);
+	uint64_t layoutHash = static_cast<uint64_t>(desc.vertexLayout.stride) | (static_cast<uint64_t>(desc.vertexLayout.instanceStride) << 32);
 	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
 	{
-		const uint64_t attributeKey = static_cast<uint64_t>(attribute.location) | (static_cast<uint64_t>(attribute.format) << 8) | (static_cast<uint64_t>(attribute.offset) << 16);
+		const uint64_t attributeKey = static_cast<uint64_t>(attribute.location) | (static_cast<uint64_t>(attribute.format) << 8) |
+		                              (static_cast<uint64_t>(attribute.perInstance) << 15) | (static_cast<uint64_t>(attribute.offset) << 16);
 		layoutHash = nctl::fasthash64(&attributeKey, sizeof(attributeKey), layoutHash);
 	}
 	const uint64_t fields[] = {
