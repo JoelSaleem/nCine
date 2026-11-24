@@ -135,6 +135,8 @@ Texture::Texture()
       minFiltering_(Filtering::NEAREST), magFiltering_(Filtering::NEAREST), wrapMode_(Wrap::REPEAT),
       isChromaKeyEnabled_(false), chromaKeyColor_(Color::Magenta)
 {
+	static uint32_t nextSortId = 1;
+	sortId_ = nextSortId++;
 }
 
 /*! \note It specifies a pixel format and it is intended to be used with `loadFromTexels()` */

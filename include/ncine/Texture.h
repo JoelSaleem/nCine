@@ -169,6 +169,8 @@ class DLL_PUBLIC Texture : public Object
 
 	bool isChromaKeyEnabled_;
 	Color chromaKeyColor_;
+	/// Creation order, so the material sort order of ties is the same on every graphics backend and driver
+	uint32_t sortId_;
 
 	/// Deleted copy constructor
 	Texture(const Texture &) = delete;

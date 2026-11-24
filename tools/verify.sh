@@ -107,6 +107,8 @@ case "$cmd" in
 		rc=0; pass=0; fail=0; skip=0
 		tol=0; [ "$BACKEND" = vulkan ] && tol="$TOL_VK"
 		maxfrac="$MAXFRAC"; [ "$tol" = 0 ] && maxfrac=0 # exact means every pixel
+		# Vulkan only: scattered edge pixels (fill-rule ownership under the flipped viewport) are noise, connected regions are not
+		blobargs=""; [ "$BACKEND" = vulkan ] && blobargs="--max-blob ${GOLDEN_MAX_BLOB:-32} --blob-max-frac ${GOLDEN_BLOB_MAX_FRAC:-0.001}"
 		for a in $(apptests); do
 			result=""
 			if [ ! -s "$GOLDENS/$a.png" ]; then echo "FAIL $a (no golden)"; rc=1; fail=$((fail + 1)); continue; fi
@@ -115,7 +117,7 @@ case "$cmd" in
 				echo "FAIL $a (Vulkan validation messages, first:)"; grep -m1 "Vulkan validation" "$TMPD/$a.log" | cut -c1-300; rc=1; fail=$((fail + 1)); continue
 			fi
 			if capture "$a" "$FRAME" "$TMPD/$a.png" &&
-				result=$("$PY" tools/img_diff.py "$GOLDENS/$a.png" "$TMPD/$a.png" --tol "$tol" --max-frac "$maxfrac" --diff-out "$TMPD/$a.diff.png"); then
+				result=$("$PY" tools/img_diff.py "$GOLDENS/$a.png" "$TMPD/$a.png" --tol "$tol" --max-frac "$maxfrac" $blobargs --diff-out "$TMPD/$a.diff.png"); then
 				echo "PASS $a"; pass=$((pass + 1))
 			else
 				mkdir -p failures; cp -f "$TMPD/$a.png" "failures/$a.png" 2>/dev/null || true; cp -f "$TMPD/$a.diff.png" "failures/$a.diff.png" 2>/dev/null || true

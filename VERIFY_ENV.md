@@ -37,6 +37,20 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 - GL through igfx: same configure plus `-DNCINE_RHI=ON` (`build-glrhi`, `build-sdl2-glrhi`), then `./tools/verify.sh all --backend gl-rhi --build build-glrhi`.
 - Vulkan: plus `-DNCINE_WITH_VULKAN=ON` (`build-vk`, Debug for asserts + validation). Goldens are Release captures: Debug builds differ in `apptest_jobsystem` (extra debug-statistics window), so golden-check Release builds only. Smoke test: `./tools/verify.sh vk-smoke --build build-vk` (clear + readback on lavapipe, exits non-zero on any validation message). Needs `vulkan-validation-layers`; VMA 3.5.0 is vendored in `src/graphics/vulkan/vk_mem_alloc.h`.
 
+## Vulkan comparison
+
+`check --backend vulkan` passes when at most `GOLDEN_MAX_FRAC` (0.01%) of pixels differ by more than 2/255, or when the
+largest 8-connected region of differing pixels is at most `GOLDEN_MAX_BLOB` (32) and at most `GOLDEN_BLOB_MAX_FRAC` (0.1%)
+differ. The second rule admits fill-rule ownership flips: the flipped viewport hands edges lying exactly on pixel centers
+to the other side, giving scattered edge pixels (apptest_joystick: 25 regions, the largest 13 px). Mutations that drop a
+draw (one 578 px region) or shift everything by one pixel (229 px) still fail.
+
+## Tie order (2026-11-24)
+
+Sprites without visit order tie on their layer and were ordered by a hash of GL object names, which depends on the driver
+and cannot be reproduced on Vulkan. Material sort keys now use creation-order texture ids and fixed engine program ids
+(user programs from 1000) in every build. Recaptured for it: `apptest_camera`, `apptest_meshsprites` (GLFW and SDL2).
+
 ## Perf method
 
 `frame_ms_avg = (wall time to frame 330 - wall time to frame 30) / 300`, so startup cancels out. Advisory on this host.

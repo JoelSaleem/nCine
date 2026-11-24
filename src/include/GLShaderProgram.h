@@ -110,6 +110,11 @@ class GLShaderProgram
 
 	/// Returns a unique identification code to retrieve the corresponding compiled binary in the cache
 	inline uint64_t hashName() const { return hashName_; }
+	/// Stable identity for material sorting: fixed for engine programs, creation order for user ones
+	inline uint32_t sortId() const { return sortId_; }
+	inline void setSortId(uint32_t sortId) { sortId_ = sortId; }
+	/// User program ids start here, below are the engine ones
+	static const uint32_t FirstUserSortId = 1000;
 	void setObjectLabel(const char *label);
 
 	/// Returns the automatic log on errors flag
@@ -166,6 +171,12 @@ class GLShaderProgram
 	/// A flag indicating whether the shader program should automatically log errors (the information log)
 	bool shouldLogOnErrors_;
 
+	uint32_t sortId_ = nextUserSortId();
+	static uint32_t nextUserSortId()
+	{
+		static uint32_t nextSortId = FirstUserSortId;
+		return nextSortId++;
+	}
 	unsigned int uniformsSize_;
 	unsigned int uniformBlocksSize_;
 

@@ -47,7 +47,10 @@ Material::Material(GLShaderProgram *program, GLTexture *texture)
       shaderProgramType_(ShaderProgramType::CUSTOM), shaderProgram_(program), uniformsHostBufferSize_(0)
 {
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
+	{
 		textures_[i] = nullptr;
+		textureSortIds_[i] = 0;
+	}
 	textures_[0] = texture;
 #ifdef WITH_RHI
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
@@ -149,6 +152,7 @@ bool Material::setTexture(unsigned int unit, const GLTexture *texture)
 	if (unit < GLTexture::MaxTextureUnits)
 	{
 		textures_[unit] = texture;
+		textureSortIds_[unit] = 0;
 #ifdef WITH_RHI
 		rhiTextures_[unit] = texture;
 #endif
@@ -158,6 +162,13 @@ bool Material::setTexture(unsigned int unit, const GLTexture *texture)
 }
 
 bool Material::setTexture(unsigned int unit, const Texture &texture)
+{
+	const bool result = setTextureFromObject(unit, texture);
+	setTextureSortId(unit, texture.sortId_);
+	return result;
+}
+
+bool Material::setTextureFromObject(unsigned int unit, const Texture &texture)
 {
 #ifdef WITH_RHI
 	if (texture.rhiTexture_)
@@ -282,6 +293,12 @@ uint32_t Material::sortKey()
 	uint32_t hash = Seed;
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 	{
+		// Textures set through a `Texture` sort by creation order, the same on every backend and driver
+		if (textureSortIds_[i] != 0)
+		{
+			hash = nctl::fasthash32(&textureSortIds_[i], sizeof(textureSortIds_[i]), hash);
+			continue;
+		}
 #ifdef WITH_RHI
 		// Without GL objects (Vulkan) identity comes from the igfx objects, or every material would batch together
 		if (textures_[i] == nullptr && rhiTextures_[i] != nullptr)
@@ -295,16 +312,8 @@ uint32_t Material::sortKey()
 		hash = nctl::fasthash32(&textureHandle, sizeof(textureHandle), hash);
 	}
 
-	const GLuint shaderProgramHandle = shaderProgram_->glHandle();
-#ifdef WITH_RHI
-	if (shaderProgramHandle == 0)
-	{
-		const uintptr_t programIdentity = reinterpret_cast<uintptr_t>(&shaderProgram_->rhiProgram());
-		hash = nctl::fasthash32(&programIdentity, sizeof(programIdentity), hash);
-	}
-	else
-#endif
-		hash = nctl::fasthash32(&shaderProgramHandle, sizeof(shaderProgramHandle), hash);
+	const uint32_t shaderProgramSortId = shaderProgram_->sortId();
+	hash = nctl::fasthash32(&shaderProgramSortId, sizeof(shaderProgramSortId), hash);
 
 	hash = nctl::fasthash32(&srcBlendingFactor_, sizeof(srcBlendingFactor_), hash);
 	hash = nctl::fasthash32(&destBlendingFactor_, sizeof(destBlendingFactor_), hash);

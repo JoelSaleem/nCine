@@ -130,8 +130,14 @@ class Material
 	const GLTexture *texture(unsigned int unit) const;
 	bool setTexture(unsigned int unit, const GLTexture *texture);
 	bool setTexture(unsigned int unit, const Texture &texture);
+  private:
+	bool setTextureFromObject(unsigned int unit, const Texture &texture);
+
+  public:
 
 	inline const GLTexture *texture() const { return texture(0); }
+	inline uint32_t textureSortId(unsigned int unit) const { return (unit < GLTexture::MaxTextureUnits) ? textureSortIds_[unit] : 0; }
+	inline void setTextureSortId(unsigned int unit, uint32_t sortId) { if (unit < GLTexture::MaxTextureUnits) textureSortIds_[unit] = sortId; }
 	inline bool setTexture(const GLTexture *texture) { return setTexture(0, texture); }
 	inline bool setTexture(const Texture &texture) { return setTexture(0, texture); }
 #ifdef WITH_RHI
@@ -150,6 +156,8 @@ class Material
 	GLShaderUniforms shaderUniforms_;
 	GLShaderUniformBlocks shaderUniformBlocks_;
 	const GLTexture *textures_[GLTexture::MaxTextureUnits];
+	/// `Texture::sortId_` of each unit, zero for textures not set through a `Texture`
+	uint32_t textureSortIds_[GLTexture::MaxTextureUnits];
 #ifdef WITH_RHI
 	const igfx::ITexture *rhiTextures_[GLTexture::MaxTextureUnits];
 #endif

@@ -626,6 +626,7 @@ void RenderResources::create()
 				dumpReflection(reflectionDump, shaderToCompile.objectLabel, *rhiDefaultPrograms_[index]);
 			// Materials keep using `GLShaderProgram`, here only a description of the Vulkan program
 			shaderToCompile.shaderProgram = nctl::makeUnique<GLShaderProgram>(*rhiDefaultPrograms_[index]);
+			shaderToCompile.shaderProgram->setSortId(index + 1);
 		}
 		if (reflectionDump)
 		{
@@ -653,6 +654,13 @@ void RenderResources::create()
 		shaderToCompile.vertexInfo.shaderFile = vertexFilename;
 		shaderToCompile.fragmentInfo.shaderFile = fragmentFilename;
 	#endif
+	}
+
+	// Engine programs sort by their fixed type, whatever the creation order of the backend
+	for (unsigned int i = 0; i < NumDefaultShaderPrograms; i++)
+	{
+		if (defaultShaderPrograms_[i])
+			defaultShaderPrograms_[i]->setSortId(i + 1);
 	}
 
 #ifdef WITH_RHI

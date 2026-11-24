@@ -408,6 +408,7 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
+		batchCommand->material().setTextureSortId(i, refCommand->material().textureSortId(i));
 #ifdef WITH_RHI
 		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
 #endif
@@ -573,6 +574,7 @@ RenderCommand *RenderBatcher::collectCommandsWithInstancing(
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
+		batchCommand->material().setTextureSortId(i, refCommand->material().textureSortId(i));
 #ifdef WITH_RHI
 		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
 #endif

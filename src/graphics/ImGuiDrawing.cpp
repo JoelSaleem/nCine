@@ -83,6 +83,7 @@ ImGuiDrawing::ImGuiDrawing(bool withSceneGraph)
 	        : GLShaderProgram::QueryPhase::IMMEDIATE;
 
 	imguiShaderProgram_ = nctl::makeUnique<GLShaderProgram>(queryPhase);
+	imguiShaderProgram_->setSortId(GLShaderProgram::FirstUserSortId - 1); // fixed, after the default programs
 
 	RenderResources::ShaderProgramCompileInfo shaderProgramInfo(imguiShaderProgram_, GLShaderProgram::Introspection::ENABLED, "ImGui");
 #ifndef WITH_EMBEDDED_SHADERS
