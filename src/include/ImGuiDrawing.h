@@ -51,7 +51,10 @@ class ImGuiDrawing
 	/// Vulkan: the compiled program `imguiShaderProgram_` describes, and the font atlas textures
 	nctl::UniquePtr<igfx::IShaderProgram> rhiShaderProgram_;
 	nctl::HashMap<igfx::ITexture *, nctl::UniquePtr<igfx::ITexture>> rhiTextures_ = nctl::HashMap<igfx::ITexture *, nctl::UniquePtr<igfx::ITexture>>(8);
+	/// Draws without the scenegraph through the render hardware interface, beginning the screen pass itself
+	void drawRhi();
 #endif
+	void setupAttributes();
 
 	nctl::UniquePtr<GLBufferObject> vbo_;
 	nctl::UniquePtr<GLBufferObject> ibo_;

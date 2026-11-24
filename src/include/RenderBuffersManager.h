@@ -89,6 +89,9 @@ class RenderBuffersManager
 	void createBuffer(const BufferSpecifications &specs);
 
 	friend class ScreenViewport;
+#ifdef WITH_RHI
+	friend class ImGuiDrawing; // flushes and remaps when drawing without the scenegraph
+#endif
 	friend class RenderStatistics;
 };
 

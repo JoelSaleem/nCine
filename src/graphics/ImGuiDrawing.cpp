@@ -91,7 +91,7 @@ ImGuiDrawing::ImGuiDrawing(bool withSceneGraph)
 		imguiShaderProgram_ = nctl::makeUnique<GLShaderProgram>(*rhiShaderProgram_);
 		imguiShaderProgram_->setSortId(GLShaderProgram::FirstUserSortId - 1);
 		if (withSceneGraph == false)
-			setupBuffersAndShader();
+			setupAttributes();
 		ImGui::StyleColorsDark();
 		ImGui::GetStyle().FrameRounding = 3.0f;
 		ImGui::GetStyle().GrabRounding = 3.0f;
@@ -162,9 +162,12 @@ void ImGuiDrawing::newFrame()
 
 		if (withSceneGraph_ == false)
 		{
-			imguiShaderUniforms_->uniform(UniformNames::GuiProjectionMatrix)->setFloatVector(projectionMatrix_.data());
-			imguiShaderUniforms_->uniform(UniformNames::Depth)->setFloatValue(0.0f);
-			imguiShaderUniforms_->commitUniforms();
+			if (imguiShaderUniforms_) // OpenGL, Vulkan passes the projection when drawing
+			{
+				imguiShaderUniforms_->uniform(UniformNames::GuiProjectionMatrix)->setFloatVector(projectionMatrix_.data());
+				imguiShaderUniforms_->uniform(UniformNames::Depth)->setFloatValue(0.0f);
+				imguiShaderUniforms_->commitUniforms();
+			}
 
 			lastFrameWidth_ = static_cast<int>(io.DisplaySize.x);
 			lastFrameHeight_ = static_cast<int>(io.DisplaySize.y);
@@ -189,6 +192,13 @@ void ImGuiDrawing::endFrame()
 	ImGui::EndFrame();
 	ImGui::Render();
 
+#ifdef WITH_RHI
+	if (igfx::isVulkanSelected())
+	{
+		drawRhi();
+		return;
+	}
+#endif
 	draw();
 }
 
@@ -484,12 +494,94 @@ void ImGuiDrawing::setupBuffersAndShader()
 	imguiShaderUniforms_->setUniformsDataPointer(uniformsBuffer_);
 	imguiShaderUniforms_->uniform(UniformNames::Texture)->setIntValue(0); // GL_TEXTURE0
 
+	setupAttributes();
+}
+
+void ImGuiDrawing::setupAttributes()
+{
 	imguiShaderProgram_->attribute(AttributeNames::Position)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, pos)));
 	imguiShaderProgram_->attribute(AttributeNames::TexCoords)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, uv)));
 	imguiShaderProgram_->attribute(AttributeNames::Color)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, col)));
 	imguiShaderProgram_->attribute(AttributeNames::Color)->setType(GL_UNSIGNED_BYTE);
 	imguiShaderProgram_->attribute(AttributeNames::Color)->setNormalized(true);
 }
+
+#ifdef WITH_RHI
+void ImGuiDrawing::drawRhi()
+{
+	ImDrawData *drawData = ImGui::GetDrawData();
+	const int fbWidth = static_cast<int>(drawData->DisplaySize.x * drawData->FramebufferScale.x + 0.5f);
+	const int fbHeight = static_cast<int>(drawData->DisplaySize.y * drawData->FramebufferScale.y + 0.5f);
+	if (fbWidth <= 0 || fbHeight <= 0)
+		return;
+	const ImVec2 clipOff = drawData->DisplayPos;
+	const ImVec2 clipScale = drawData->FramebufferScale;
+	if (drawData->Textures != nullptr)
+		for (ImTextureData *tex : *drawData->Textures)
+			if (tex->Status != ImTextureStatus_OK)
+				updateTexture(tex);
+
+	igfx::ICommandList &commandList = RenderResources::rhiCommandList();
+	igfx::RenderPassDesc pass;
+	pass.clear.color = Colorf::Black; // nothing else draws without the scenegraph
+	commandList.beginRenderPass(pass);
+
+	// Same state as the OpenGL path: alpha blending, no depth test, no culling
+	igfx::PipelineDesc pipelineDesc;
+	pipelineDesc.program = rhiShaderProgram_.get();
+	pipelineDesc.vertexLayout = imguiShaderProgram_->vertexLayout();
+	pipelineDesc.topology = igfx::PrimitiveTopology::TRIANGLES;
+	pipelineDesc.blend.enabled = true;
+	pipelineDesc.depth.testEnabled = false;
+	pipelineDesc.depth.writeEnabled = false;
+	commandList.bindPipeline(RenderResources::rhiPipeline(pipelineDesc));
+
+	// The projection and a zero depth, at the offsets the program reflects
+	uint8_t looseUniforms[256] = {};
+	uint32_t writeMask = 0;
+	const nctl::Array<igfx::UniformInfo> &uniforms = rhiShaderProgram_->uniforms();
+	for (unsigned int i = 0; i < uniforms.size() && uniforms[i].blockIndex == -1 && uniforms[i].offset >= 0; i++)
+	{
+		if (uniforms[i].name == UniformNames::GuiProjectionMatrix && uniforms[i].offset + 64 <= 256)
+			memcpy(looseUniforms + uniforms[i].offset, projectionMatrix_.data(), 64);
+		writeMask |= (1u << i); // uDepth stays zero
+	}
+	commandList.setLooseUniforms(looseUniforms, writeMask);
+
+	RenderBuffersManager &buffers = RenderResources::buffersManager();
+	for (const ImDrawList *imDrawList : drawData->CmdLists)
+	{
+		const unsigned long vertexBytes = static_cast<unsigned long>(imDrawList->VtxBuffer.Size) * sizeof(ImDrawVert);
+		const unsigned long indexBytes = static_cast<unsigned long>(imDrawList->IdxBuffer.Size) * sizeof(ImDrawIdx);
+		const RenderBuffersManager::Parameters vbo = buffers.acquireMemory(RenderBuffersManager::BufferTypes::ARRAY, vertexBytes);
+		const RenderBuffersManager::Parameters ibo = buffers.acquireMemory(RenderBuffersManager::BufferTypes::ELEMENT_ARRAY, indexBytes);
+		memcpy(vbo.mapBase + vbo.offset, imDrawList->VtxBuffer.Data, vertexBytes);
+		memcpy(ibo.mapBase + ibo.offset, imDrawList->IdxBuffer.Data, indexBytes);
+
+		for (int cmdIdx = 0; cmdIdx < imDrawList->CmdBuffer.Size; cmdIdx++)
+		{
+			const ImDrawCmd *imCmd = &imDrawList->CmdBuffer[cmdIdx];
+			const ImVec2 clipMin((imCmd->ClipRect.x - clipOff.x) * clipScale.x, (imCmd->ClipRect.y - clipOff.y) * clipScale.y);
+			const ImVec2 clipMax((imCmd->ClipRect.z - clipOff.x) * clipScale.x, (imCmd->ClipRect.w - clipOff.y) * clipScale.y);
+			if (clipMax.x <= clipMin.x || clipMax.y <= clipMin.y)
+				continue;
+			// OpenGL-style rectangle, bottom-left origin
+			commandList.setScissor(Recti(static_cast<int>(clipMin.x), static_cast<int>(static_cast<float>(fbHeight) - clipMax.y),
+			                             static_cast<int>(clipMax.x - clipMin.x), static_cast<int>(clipMax.y - clipMin.y)));
+			commandList.bindTexture(0, reinterpret_cast<igfx::ITexture *>(imCmd->GetTexID()));
+			commandList.bindVertexBuffer(*vbo.rhiObject, vbo.offset);
+			commandList.bindIndexBuffer(*ibo.rhiObject, ibo.offset, sizeof(ImDrawIdx) == 2 ? igfx::IndexType::UINT16 : igfx::IndexType::UINT32);
+			commandList.drawIndexed(imCmd->ElemCount, 0, imCmd->IdxOffset, static_cast<int>(imCmd->VtxOffset));
+		}
+	}
+
+	commandList.setScissor(Recti(0, 0, 0, 0));
+	commandList.endRenderPass();
+	// No screen viewport flushes and remaps the managed buffers without the scenegraph
+	buffers.flushUnmap();
+	buffers.remap();
+}
+#endif
 
 void ImGuiDrawing::draw()
 {
