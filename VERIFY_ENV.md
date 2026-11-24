@@ -70,3 +70,8 @@ Baseline: upstream `a1b5f40a`, unit tests 117/117 pass.
 One baseline per backend, `goldens/perf_baseline.json` (GL) and `goldens/perf_baseline_vulkan.json`, since frame times
 of different backends are not comparable. Vulkan perf runs skip the validation layer: `./tools/verify.sh check-perf
 --backend vulkan --build build-vk-rel`. On this headless host both are software rasterizers, so the gate is advisory.
+
+Lavapipe here starts no rasterizer threads (only its two WSI threads; llvmpipe GL runs 32), so Vulkan frame times are
+4-6x GL's on this host. With both limited to one thread (`LP_NUM_THREADS=1`) apptest_bunnymark is GL 17.2 ms vs
+Vulkan 20.6 ms (1.2x). In the Vulkan profile, engine code is 4.6% (pipeline-key hashing 0.55%) and lavapipe command
+processing under 1%; the rest is rasterization and shading. Compare backends single-threaded, not with these baselines.
