@@ -1,77 +1,83 @@
 {
  "apptest_anchor": {
-  "frame_ms_avg": 1.3432
+  "frame_ms_avg": 1.1752
  },
  "apptest_animsprites": {
-  "frame_ms_avg": 0.7058
+  "frame_ms_avg": 0.6757
  },
  "apptest_audio": {
-  "frame_ms_avg": 1.4053
+  "frame_ms_avg": 1.3173
  },
  "apptest_bunnymark": {
-  "frame_ms_avg": 3.1012
+  "frame_ms_avg": 3.0166
  },
  "apptest_camera": {
-  "frame_ms_avg": 0.9072
+  "frame_ms_avg": 0.9413
+ },
+ "apptest_clear": {
+  "frame_ms_avg": 0.6957
  },
  "apptest_clones": {
-  "frame_ms_avg": 1.2893
+  "frame_ms_avg": 1.3374
  },
  "apptest_filebrowser": {
-  "frame_ms_avg": 1.6403
+  "frame_ms_avg": 1.554
  },
  "apptest_font": {
-  "frame_ms_avg": 0.8951
+  "frame_ms_avg": 0.8435
  },
  "apptest_gui": {
-  "frame_ms_avg": 0.8584
+  "frame_ms_avg": 0.9487
  },
  "apptest_jobsystem": {
-  "frame_ms_avg": 1.4305
+  "frame_ms_avg": 1.2593
  },
  "apptest_joystick": {
-  "frame_ms_avg": 0.4956
+  "frame_ms_avg": 0.8315
  },
  "apptest_loading": {
-  "frame_ms_avg": 0.7742
- },
- "apptest_lua": {
-  "frame_ms_avg": 2.3003
- },
- "apptest_luareload": {
-  "frame_ms_avg": 3.1646
- },
- "apptest_meshdeform": {
-  "frame_ms_avg": 0.9266
- },
- "apptest_meshsprites": {
-  "frame_ms_avg": 1.6754
- },
- "apptest_multitouch": {
-  "frame_ms_avg": 0.7466
- },
- "apptest_particles": {
-  "frame_ms_avg": 1.5377
- },
- "apptest_rotozoom": {
-  "frame_ms_avg": 1.049
- },
- "apptest_scaling": {
-  "frame_ms_avg": 1.0516
- },
- "apptest_shaders": {
-  "frame_ms_avg": 1.3387
- },
- "apptest_simdbench": {
-  "frame_ms_avg": 0.9297
- },
- "apptest_sinescroller": {
-  "frame_ms_avg": 0.6374
- },
- "apptest_texformats": {
   "frame_ms_avg": 0.8727
  },
+ "apptest_lua": {
+  "frame_ms_avg": 2.1583
+ },
+ "apptest_luareload": {
+  "frame_ms_avg": 2.9598
+ },
+ "apptest_meshdeform": {
+  "frame_ms_avg": 0.7843
+ },
+ "apptest_meshsprites": {
+  "frame_ms_avg": 1.5246
+ },
+ "apptest_multitouch": {
+  "frame_ms_avg": 0.7945
+ },
+ "apptest_particles": {
+  "frame_ms_avg": 1.495
+ },
+ "apptest_rendertargets": {
+  "frame_ms_avg": 1.0987
+ },
+ "apptest_rotozoom": {
+  "frame_ms_avg": 0.8326
+ },
+ "apptest_scaling": {
+  "frame_ms_avg": 1.1049
+ },
+ "apptest_shaders": {
+  "frame_ms_avg": 1.22
+ },
+ "apptest_simdbench": {
+  "frame_ms_avg": 0.9413
+ },
+ "apptest_sinescroller": {
+  "frame_ms_avg": 0.7394
+ },
+ "apptest_texformats": {
+  "frame_ms_avg": 0.7277
+ },
  "apptest_viewports": {
-  "frame_ms_avg": 2.1398
+  "frame_ms_avg": 2.0251
  }
 }
