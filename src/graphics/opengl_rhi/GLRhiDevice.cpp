@@ -190,6 +190,15 @@ void GLTexture::upload(unsigned int mipLevel, const void *data)
 	glPixelStorei(GL_UNPACK_ALIGNMENT, previousAlignment);
 }
 
+bool GLTexture::reallocate(const igfx::TextureDesc &desc)
+{
+	rhiDesc_ = desc;
+	setSampler(desc.sampler);
+	for (unsigned int level = 0; level < desc.mipLevels; level++)
+		upload(level, nullptr);
+	return true;
+}
+
 void GLTexture::setSampler(const igfx::SamplerDesc &sampler)
 {
 	rhiDesc_.sampler = sampler;
@@ -270,6 +279,8 @@ void GLShaderProgram::describe(nctl::UniquePtr<igfx::IShaderProgram> rhiProgram)
 	vertexFormat_.reset();
 	uniformsSize_ = 0;
 	uniformBlocksSize_ = 0;
+	if (rhiProgram_ != nullptr)
+		RenderResources::forgetProgram(*rhiProgram_); // its address can be reused by the next program
 	ownedRhiProgram_ = nctl::move(rhiProgram);
 	rhiProgram_ = ownedRhiProgram_.get();
 	if (rhiProgram_ == nullptr || rhiProgram_->linkStatus() != igfx::IShaderProgram::Status::LINKED)
@@ -285,10 +296,10 @@ void GLShaderProgram::buildFromRhi(igfx::IShaderProgram &rhiProgram)
 {
 	introspection_ = Introspection::ENABLED;
 	const nctl::Array<igfx::UniformInfo> &uniforms = rhiProgram.uniforms();
-	// Samplers are descriptors on Vulkan, not loose values, so they get no cache
+	// Samplers included, their texture unit is stored after the loose values
 	for (const igfx::UniformInfo &uniform : uniforms)
 	{
-		if (uniform.blockIndex == -1 && uniform.type != igfx::UniformType::SAMPLER_2D)
+		if (uniform.blockIndex == -1)
 			uniforms_.pushBack(GLUniform(uniform, -1));
 	}
 	uniformsSize_ = static_cast<unsigned int>(rhiProgram.looseUniformsSize());
@@ -615,10 +626,7 @@ nctl::UniquePtr<igfx::IBuffer> GLRhiDevice::createBuffer(const igfx::BufferDesc 
 nctl::UniquePtr<igfx::ITexture> GLRhiDevice::createTexture(const igfx::TextureDesc &desc)
 {
 	nctl::UniquePtr<GLTexture> texture = nctl::makeUnique<GLTexture>(GL_TEXTURE_2D);
-	texture->rhiDesc_ = desc;
-	texture->setSampler(desc.sampler);
-	for (unsigned int level = 0; level < desc.mipLevels; level++)
-		texture->upload(level, nullptr);
+	texture->reallocate(desc);
 	return nctl::move(texture);
 }
 

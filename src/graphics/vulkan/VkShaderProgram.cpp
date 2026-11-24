@@ -46,6 +46,7 @@ namespace {
 		switch (type)
 		{
 			case igfx::UniformType::FLOAT:
+			case igfx::UniformType::SAMPLER_2D: // its texture unit, stored after the default block
 			case igfx::UniformType::INT:
 			case igfx::UniformType::UINT:
 			case igfx::UniformType::BOOL: return 4;
@@ -271,11 +272,34 @@ VkRhiShaderProgram::VkRhiShaderProgram(VkDevice device, const char *vertexSource
 		attributes_.pushBack(info);
 	}
 
+	// Each sampler keeps its texture unit (an int, like on OpenGL) after the default block, so it can be set like a loose uniform
+	looseStorageSize_ = looseUniformsSize_;
+	unsigned int numSamplers = 0;
+	for (igfx::UniformInfo &uniform : uniforms_)
+	{
+		if (uniform.type == igfx::UniformType::SAMPLER_2D)
+		{
+			uniform.offset = looseStorageSize_;
+			looseStorageSize_ += static_cast<int>(sizeof(int));
+			numSamplers++;
+		}
+	}
 	for (const igfx::UniformInfo &uniform : uniforms_)
 	{
 		if (uniform.blockIndex != -1 || uniform.offset < 0)
 			break;
 		numLooseUniforms_++;
+	}
+
+	// Write masks have a bit per loose uniform, bindings have room for these many blocks and samplers
+	const int maxSamplers = DefaultBlockBinding - FirstSamplerBinding;
+	if (numLooseUniforms_ > 32 || static_cast<int>(uniformBlocks_.size()) > FirstSamplerBinding || static_cast<int>(numSamplers) > maxSamplers)
+	{
+		status_ = Status::LINKING_FAILED;
+		infoLog_.format("Vulkan programs support up to 32 loose uniforms and samplers (%u), %d uniform blocks (%u) and %d samplers (%u)",
+		                numLooseUniforms_, FirstSamplerBinding, uniformBlocks_.size(), maxSamplers, numSamplers);
+		LOGE_X("Shader program \"%s\": %s", name ? name : "", infoLog_.data());
+		return;
 	}
 
 	// Unique bindings across stages: uniform blocks from zero, samplers from `FirstSamplerBinding`, default block last
@@ -311,8 +335,8 @@ VkRhiShaderProgram::VkRhiShaderProgram(VkDevice device, const char *vertexSource
 		LOGE_X("Shader program \"%s\": %s", name ? name : "", infoLog_.data());
 		return;
 	}
-	if (looseUniformsSize_ > 0)
-		looseStorage_ = nctl::makeUnique<uint8_t[]>(static_cast<unsigned long>(looseUniformsSize_));
+	if (looseStorageSize_ > 0)
+		looseStorage_ = nctl::makeUnique<uint8_t[]>(static_cast<unsigned long>(looseStorageSize_)); // zeroed, samplers read unit 0
 
 	status_ = Status::LINKED;
 }
@@ -329,7 +353,7 @@ void VkRhiShaderProgram::writeLooseUniforms(const uint8_t *data, uint32_t writeM
 			continue;
 		const igfx::UniformInfo &uniform = uniforms_[i];
 		const unsigned int size = std140Size(uniform.type);
-		if (size > 0 && uniform.offset + static_cast<int>(size) <= looseUniformsSize_)
+		if (size > 0 && uniform.offset + static_cast<int>(size) <= looseStorageSize_)
 			memcpy(looseStorage_.get() + uniform.offset, data + uniform.offset, size);
 	}
 }

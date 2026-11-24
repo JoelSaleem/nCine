@@ -711,25 +711,31 @@ void RenderResources::create()
 #endif
 
 #ifdef WITH_RHI
+namespace {
+	uint64_t pipelineKey(const igfx::PipelineDesc &desc)
+	{
+		uint64_t layoutHash = static_cast<uint64_t>(desc.vertexLayout.stride) | (static_cast<uint64_t>(desc.vertexLayout.instanceStride) << 32);
+		for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
+		{
+			const uint64_t attributeKey = static_cast<uint64_t>(attribute.location) | (static_cast<uint64_t>(attribute.format) << 8) |
+			                              (static_cast<uint64_t>(attribute.perInstance) << 15) | (static_cast<uint64_t>(attribute.offset) << 16);
+			layoutHash = nctl::fasthash64(&attributeKey, sizeof(attributeKey), layoutHash);
+		}
+		const uint64_t fields[] = {
+			layoutHash,
+			static_cast<uint64_t>(reinterpret_cast<uintptr_t>(desc.program)),
+			static_cast<uint64_t>(desc.topology),
+			static_cast<uint64_t>(desc.blend.enabled) | (static_cast<uint64_t>(desc.blend.srcFactor) << 8) | (static_cast<uint64_t>(desc.blend.dstFactor) << 16),
+			static_cast<uint64_t>(desc.depth.testEnabled) | (static_cast<uint64_t>(desc.depth.writeEnabled) << 8) | (static_cast<uint64_t>(desc.depth.compareOp) << 16),
+			static_cast<uint64_t>(desc.cullMode) | (static_cast<uint64_t>(desc.colorFormat) << 8) | (static_cast<uint64_t>(desc.hasDepthAttachment) << 16)
+		};
+		return nctl::fasthash64(fields, sizeof(fields), 0);
+	}
+}
+
 igfx::IPipeline &RenderResources::rhiPipeline(const igfx::PipelineDesc &desc)
 {
-	uint64_t layoutHash = static_cast<uint64_t>(desc.vertexLayout.stride) | (static_cast<uint64_t>(desc.vertexLayout.instanceStride) << 32);
-	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
-	{
-		const uint64_t attributeKey = static_cast<uint64_t>(attribute.location) | (static_cast<uint64_t>(attribute.format) << 8) |
-		                              (static_cast<uint64_t>(attribute.perInstance) << 15) | (static_cast<uint64_t>(attribute.offset) << 16);
-		layoutHash = nctl::fasthash64(&attributeKey, sizeof(attributeKey), layoutHash);
-	}
-	const uint64_t fields[] = {
-		layoutHash,
-		static_cast<uint64_t>(reinterpret_cast<uintptr_t>(desc.program)),
-		static_cast<uint64_t>(desc.topology),
-		static_cast<uint64_t>(desc.blend.enabled) | (static_cast<uint64_t>(desc.blend.srcFactor) << 8) | (static_cast<uint64_t>(desc.blend.dstFactor) << 16),
-		static_cast<uint64_t>(desc.depth.testEnabled) | (static_cast<uint64_t>(desc.depth.writeEnabled) << 8) | (static_cast<uint64_t>(desc.depth.compareOp) << 16),
-		static_cast<uint64_t>(desc.cullMode) | (static_cast<uint64_t>(desc.colorFormat) << 8) | (static_cast<uint64_t>(desc.hasDepthAttachment) << 16)
-	};
-	const uint64_t key = nctl::fasthash64(fields, sizeof(fields), 0);
-
+	const uint64_t key = pipelineKey(desc);
 	igfx::IPipeline **cached = rhiPipelines_.find(key);
 	if (cached != nullptr)
 		return **cached;
@@ -740,6 +746,20 @@ igfx::IPipeline &RenderResources::rhiPipeline(const igfx::PipelineDesc &desc)
 	igfx::IPipeline *pipeline = rhiPipelineStorage_.back().get();
 	rhiPipelines_.insert(key, pipeline);
 	return *pipeline;
+}
+
+void RenderResources::forgetProgram(const igfx::IShaderProgram &program)
+{
+	for (unsigned int i = 0; i < rhiPipelineStorage_.size();)
+	{
+		if (rhiPipelineStorage_[i]->desc().program == &program)
+		{
+			rhiPipelines_.remove(pipelineKey(rhiPipelineStorage_[i]->desc()));
+			rhiPipelineStorage_.unorderedRemoveAt(i);
+		}
+		else
+			i++;
+	}
 }
 #endif
 
@@ -757,20 +777,20 @@ void RenderResources::createMinimal()
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
 	// Never available without OpenGL program binaries, but callers can always ask it
 	binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache && usingVulkan() == false, openglCfg.shaderCacheDirname.data());
-	if (usingVulkan() == false)
-		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
-	hash64_ = nctl::makeUnique<Hash64>();
 #ifdef WITH_RHI
+	// Before the buffers, the Vulkan ones come from it
 	#ifdef WITH_VULKAN
-	// ponytail: no OpenGL resource managers on Vulkan, its buffers and shaders come in the next parts of Task 1.4
 	if (usingVulkan())
 		rhiDevice_ = createGlfwVulkanDevice();
 	else
 	#endif
 		rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
 #endif
-	// After the device, as the Vulkan buffers come from it
+	// Same order as upstream: the VAO pool binds a VAO the managed index buffer must not attach to
 	buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
+	if (usingVulkan() == false)
+		vaoPool_ = nctl::makeUnique<RenderVaoPool>(openglCfg.vaoPoolSize);
+	hash64_ = nctl::makeUnique<Hash64>();
 
 	LOGI("Minimal rendering resources created");
 }

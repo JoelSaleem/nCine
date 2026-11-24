@@ -83,8 +83,8 @@ namespace {
 ///////////////////////////////////////////////////////////
 
 // ponytail: every buffer is host visible and persistently mapped, static data gets device-local memory and staging when it matters
-VkRhiBuffer::VkRhiBuffer(VmaAllocator allocator, const igfx::BufferDesc &desc)
-    : allocator_(allocator), desc_(desc)
+VkRhiBuffer::VkRhiBuffer(VkRhiDevice &device, const igfx::BufferDesc &desc)
+    : device_(device), desc_(desc)
 {
 	VkBufferCreateInfo bufferInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
 	bufferInfo.size = desc.size;
@@ -96,7 +96,7 @@ VkRhiBuffer::VkRhiBuffer(VmaAllocator allocator, const igfx::BufferDesc &desc)
 	allocationInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
 	VmaAllocationInfo allocatedInfo = {};
-	if (vmaCreateBuffer(allocator_, &bufferInfo, &allocationInfo, &buffer_, &allocation_, &allocatedInfo) != VK_SUCCESS)
+	if (vmaCreateBuffer(device_.allocator_, &bufferInfo, &allocationInfo, &buffer_, &allocation_, &allocatedInfo) != VK_SUCCESS)
 	{
 		LOGE_X("Cannot create a Vulkan buffer of %lu bytes", desc.size);
 		buffer_ = VK_NULL_HANDLE;
@@ -107,18 +107,25 @@ VkRhiBuffer::VkRhiBuffer(VmaAllocator allocator, const igfx::BufferDesc &desc)
 
 VkRhiBuffer::~VkRhiBuffer()
 {
+	device_.destroyLater(VK_OBJECT_TYPE_BUFFER, buffer_, allocation_);
+}
+
+void VkRhiBuffer::destroyNow()
+{
 	if (buffer_ != VK_NULL_HANDLE)
-		vmaDestroyBuffer(allocator_, buffer_, allocation_);
+		vmaDestroyBuffer(device_.allocator_, buffer_, allocation_);
+	buffer_ = VK_NULL_HANDLE;
+	mapped_ = nullptr;
 }
 
 void VkRhiBuffer::flush(unsigned long offset, unsigned long size)
 {
-	vmaFlushAllocation(allocator_, allocation_, offset, size);
+	vmaFlushAllocation(device_.allocator_, allocation_, offset, size);
 }
 
 void VkRhiBuffer::invalidate(unsigned long offset, unsigned long size)
 {
-	vmaInvalidateAllocation(allocator_, allocation_, offset, size);
+	vmaInvalidateAllocation(device_.allocator_, allocation_, offset, size);
 }
 
 void VkRhiBuffer::update(unsigned long offset, unsigned long size, const void *data)
@@ -134,6 +141,9 @@ void VkRhiBuffer::update(unsigned long offset, unsigned long size, const void *d
 
 void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 {
+	// Without a swapchain image the frame is not drawn at all, texture passes included
+	if (device_.frameSkipped_)
+		return;
 	// A texture viewport drawn from inside the screen pass (e.g. behind a sub-viewport), as OpenGL allows
 	if (insideRenderPass_)
 	{
@@ -275,6 +285,8 @@ void VkRhiCommandList::endRenderPass()
 void VkRhiCommandList::setViewport(const Recti &rect)
 {
 	viewport_ = rect;
+	if (insideRenderPass_ == false)
+		return; // every pass sets its own when it begins
 	const float extentHeight = static_cast<float>(passExtent_.height);
 	VkViewport viewport;
 	viewport.x = static_cast<float>(rect.x);
@@ -299,6 +311,8 @@ void VkRhiCommandList::setViewport(const Recti &rect)
 void VkRhiCommandList::setScissor(const Recti &rect)
 {
 	scissor_ = (rect.w > 0 && rect.h > 0) ? rect : Recti(0, 0, 0, 0);
+	if (insideRenderPass_ == false)
+		return;
 	VkRect2D scissor = { { 0, 0 }, passExtent_ };
 	if (rect.w > 0 && rect.h > 0)
 	{
@@ -319,6 +333,11 @@ void VkRhiCommandList::setScissor(const Recti &rect)
 void VkRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)
 {
 	pipeline_ = &static_cast<VkRhiPipeline &>(pipeline);
+	if (insideRenderPass_ == false)
+	{
+		pipeline_ = nullptr; // a skipped frame, the pass formats are unknown
+		return;
+	}
 	const VkPipeline vkPipeline = pipeline_->pipelineFor(passColorFormat_, passDepthFormat_, passTarget_ == nullptr);
 	if (vkPipeline != VK_NULL_HANDLE)
 		vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
@@ -373,11 +392,20 @@ void VkRhiCommandList::pushDescriptors()
 	if (pipeline_->looseBinding_ >= 0)
 	{
 		// The program's current loose values, copied into this frame's transient uniform buffer
-		const unsigned long size = static_cast<unsigned long>(pipeline_->program_->looseUniformsSize());
+		const unsigned long size = static_cast<unsigned long>(pipeline_->program_->looseBlockSize());
 		const unsigned long alignment = static_cast<unsigned long>(device_.limits_.uniformBufferOffsetAlignment);
-		const unsigned long offset = (device_.frameUniformsOffset_ + alignment - 1) / alignment * alignment;
-		FATAL_ASSERT_MSG(offset + size <= VkRhiDevice::FrameUniformsSize, "Out of transient uniform memory for this frame");
-		VkRhiBuffer &frameUniforms = *device_.frameUniforms_[device_.frameIndex_];
+		unsigned long offset = (device_.frameUniformsOffset_ + alignment - 1) / alignment * alignment;
+		nctl::UniquePtr<VkRhiBuffer> &frameUniformsPtr = device_.frameUniforms_[device_.frameIndex_];
+		if (offset + size > frameUniformsPtr->desc().size)
+		{
+			// A bigger buffer for the rest of the frame, the old one is destroyed once this frame is done with it
+			igfx::BufferDesc biggerDesc = frameUniformsPtr->desc();
+			biggerDesc.size = nctl::max(biggerDesc.size * 2, size);
+			frameUniformsPtr = nctl::makeUnique<VkRhiBuffer>(device_, biggerDesc);
+			FATAL_ASSERT_MSG_X(frameUniformsPtr->isValid(), "Cannot grow the transient uniform buffer to %lu bytes", biggerDesc.size);
+			offset = 0;
+		}
+		VkRhiBuffer &frameUniforms = *frameUniformsPtr;
 		memcpy(frameUniforms.mappedData() + offset, pipeline_->program_->looseUniformsStorage(), size);
 		device_.frameUniformsOffset_ = offset + size;
 
@@ -404,13 +432,19 @@ void VkRhiCommandList::pushDescriptors()
 		write.pBufferInfo = &bufferInfos[numBuffers++];
 	}
 
-	for (unsigned int unit = 0; unit < pipeline_->samplerBindings_.size(); unit++)
+	const uint8_t *looseStorage = pipeline_->program_->looseUniformsStorage();
+	for (unsigned int i = 0; i < pipeline_->samplerBindings_.size(); i++)
 	{
-		const VkRhiTexture *texture = (unit < MaxTextureUnits && textures_[unit]) ? textures_[unit] : device_.dummyTexture_.get();
+		// The sampler's value is its texture unit, like `glUniform1i()`, and zero until set
+		int unit = 0;
+		if (looseStorage != nullptr)
+			memcpy(&unit, looseStorage + pipeline_->samplerUnitOffsets_[i], sizeof(int));
+		const bool bound = (unit >= 0 && unit < static_cast<int>(MaxTextureUnits) && textures_[unit] != nullptr);
+		const VkRhiTexture *texture = bound ? textures_[unit] : device_.dummyTexture_.get();
 		imageInfos[numImages] = { texture->sampler(), texture->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 		VkWriteDescriptorSet &write = writes[numWrites++];
 		write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-		write.dstBinding = static_cast<uint32_t>(pipeline_->samplerBindings_[unit]);
+		write.dstBinding = static_cast<uint32_t>(pipeline_->samplerBindings_[i]);
 		write.descriptorCount = 1;
 		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		write.pImageInfo = &imageInfos[numImages++];
@@ -422,7 +456,7 @@ void VkRhiCommandList::pushDescriptors()
 
 void VkRhiCommandList::draw(unsigned int vertexCount, unsigned int instanceCount, unsigned int firstVertex)
 {
-	if (pipeline_ == nullptr || pipeline_->isValid() == false)
+	if (insideRenderPass_ == false || pipeline_ == nullptr || pipeline_->isValid() == false)
 		return;
 	pushDescriptors();
 	vkCmdDraw(commandBuffer_, vertexCount, instanceCount > 0 ? instanceCount : 1, firstVertex, 0);
@@ -430,7 +464,7 @@ void VkRhiCommandList::draw(unsigned int vertexCount, unsigned int instanceCount
 
 void VkRhiCommandList::drawIndexed(unsigned int indexCount, unsigned int instanceCount, unsigned int firstIndex, int vertexOffset)
 {
-	if (pipeline_ == nullptr || pipeline_->isValid() == false)
+	if (insideRenderPass_ == false || pipeline_ == nullptr || pipeline_->isValid() == false)
 		return;
 	pushDescriptors();
 	vkCmdDrawIndexed(commandBuffer_, indexCount, instanceCount > 0 ? instanceCount : 1, firstIndex, vertexOffset, 0);
@@ -456,6 +490,8 @@ VkRhiDevice::~VkRhiDevice()
 		dummyTexture_.reset(nullptr);
 		for (nctl::UniquePtr<VkRhiBuffer> &frameUniforms : frameUniforms_)
 			frameUniforms.reset(nullptr);
+		for (unsigned int slot = 0; slot < FramesInFlight; slot++)
+			collectGarbage(slot);
 		destroySwapchain();
 		vkDestroyFence(device_, transferFence_, nullptr);
 		vkDestroyCommandPool(device_, transferPool_, nullptr);
@@ -552,7 +588,7 @@ bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 	frameUniformsDesc.size = FrameUniformsSize;
 	for (nctl::UniquePtr<VkRhiBuffer> &frameUniforms : frameUniforms_)
 	{
-		frameUniforms = nctl::makeUnique<VkRhiBuffer>(allocator_, frameUniformsDesc);
+		frameUniforms = nctl::makeUnique<VkRhiBuffer>(*this, frameUniformsDesc);
 		if (frameUniforms->isValid() == false)
 			return false;
 	}
@@ -731,6 +767,9 @@ bool VkRhiDevice::createSwapchain()
 		swapchainExtent_.height = nctl::clamp(static_cast<uint32_t>(requestedHeight_), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 	}
 
+	if (swapchainExtent_.width == 0 || swapchainExtent_.height == 0)
+		return false;
+
 	uint32_t numImages = capabilities.minImageCount + 1;
 	if (capabilities.maxImageCount > 0 && numImages > capabilities.maxImageCount)
 		numImages = capabilities.maxImageCount;
@@ -831,6 +870,25 @@ void VkRhiDevice::destroySwapchain()
 	swapchain_ = VK_NULL_HANDLE;
 }
 
+void VkRhiDevice::collectGarbage(unsigned int slot)
+{
+	for (const Garbage &garbage : garbage_[slot])
+	{
+		switch (garbage.type)
+		{
+			case VK_OBJECT_TYPE_BUFFER: vmaDestroyBuffer(allocator_, (VkBuffer)(garbage.handle), garbage.allocation); break;
+			case VK_OBJECT_TYPE_IMAGE: vmaDestroyImage(allocator_, (VkImage)(garbage.handle), garbage.allocation); break;
+			case VK_OBJECT_TYPE_IMAGE_VIEW: vkDestroyImageView(device_, (VkImageView)(garbage.handle), nullptr); break;
+			case VK_OBJECT_TYPE_SAMPLER: vkDestroySampler(device_, (VkSampler)(garbage.handle), nullptr); break;
+			case VK_OBJECT_TYPE_PIPELINE: vkDestroyPipeline(device_, (VkPipeline)(garbage.handle), nullptr); break;
+			case VK_OBJECT_TYPE_PIPELINE_LAYOUT: vkDestroyPipelineLayout(device_, (VkPipelineLayout)(garbage.handle), nullptr); break;
+			case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT: vkDestroyDescriptorSetLayout(device_, (VkDescriptorSetLayout)(garbage.handle), nullptr); break;
+			default: FATAL_MSG_X("Deferred destruction of Vulkan object type %d is not implemented", garbage.type);
+		}
+	}
+	garbage_[slot].clear();
+}
+
 bool VkRhiDevice::recreateSwapchain()
 {
 	vkDeviceWaitIdle(device_);
@@ -870,13 +928,19 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 {
 	Frame &frame = frames_[frameIndex_];
 	vkWaitForFences(device_, 1, &frame.fence, VK_TRUE, UINT64_MAX);
+	// The last frame of this slot is done, and so are the ones before it
+	collectGarbage(frameIndex_);
+	garbageSlot_ = frameIndex_;
 
-	VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR && recreateSwapchain())
+	VkResult result = VK_ERROR_OUT_OF_DATE_KHR;
+	if (swapchain_ != VK_NULL_HANDLE || recreateSwapchain())
 		result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR && swapchain_ != VK_NULL_HANDLE && recreateSwapchain())
+		result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
+	frameSkipped_ = (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
+	if (frameSkipped_ && result != VK_ERROR_OUT_OF_DATE_KHR)
 		LOGE_X("vkAcquireNextImageKHR() failed with VkResult %d", result);
-	imageAvailablePending_ = true;
+	imageAvailablePending_ = (frameSkipped_ == false); // a failed acquire signals nothing
 	frameUniformsOffset_ = 0; // this frame's transient uniforms are free again, its fence has been waited
 
 	vkResetFences(device_, 1, &frame.fence);
@@ -891,8 +955,19 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 void VkRhiDevice::endFrame()
 {
 	Frame &frame = frames_[frameIndex_];
-	SwapchainImage &image = swapchainImages_[imageIndex_];
 	commandList_.endRenderPass();
+	if (frameSkipped_)
+	{
+		// Submitted anyway, the next wait on this frame's fence must return
+		vkEndCommandBuffer(frame.commandBuffer);
+		VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &frame.commandBuffer;
+		vkQueueSubmit(queue_, 1, &submitInfo, frame.fence);
+		frameIndex_ = (frameIndex_ + 1) % FramesInFlight;
+		return;
+	}
+	SwapchainImage &image = swapchainImages_[imageIndex_];
 	transitionImage(image.image, VK_IMAGE_ASPECT_COLOR_BIT, image.layout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 	                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT,
 	                VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
@@ -958,6 +1033,8 @@ void VkRhiDevice::submitAndWait()
 
 bool VkRhiDevice::readbackFrame(uint8_t *rgbPixels, int width, int height)
 {
+	if (frameSkipped_)
+		return false;
 	if (rgbPixels == nullptr || commandList_.insideRenderPass_ ||
 	    width != static_cast<int>(swapchainExtent_.width) || height != static_cast<int>(swapchainExtent_.height))
 	{
@@ -971,7 +1048,7 @@ bool VkRhiDevice::readbackFrame(uint8_t *rgbPixels, int width, int height)
 		igfx::BufferDesc desc;
 		desc.size = bufferSize;
 		desc.usage = igfx::BufferUsage::UNIFORM; // any usage, the transfer bits are always added
-		readbackBuffer_ = nctl::makeUnique<VkRhiBuffer>(allocator_, desc);
+		readbackBuffer_ = nctl::makeUnique<VkRhiBuffer>(*this, desc);
 		if (readbackBuffer_->isValid() == false)
 			return false;
 	}
@@ -1001,7 +1078,7 @@ bool VkRhiDevice::readbackFrame(uint8_t *rgbPixels, int width, int height)
 
 nctl::UniquePtr<igfx::IBuffer> VkRhiDevice::createBuffer(const igfx::BufferDesc &desc)
 {
-	nctl::UniquePtr<VkRhiBuffer> buffer = nctl::makeUnique<VkRhiBuffer>(allocator_, desc);
+	nctl::UniquePtr<VkRhiBuffer> buffer = nctl::makeUnique<VkRhiBuffer>(*this, desc);
 	if (buffer->isValid() == false)
 		return nctl::UniquePtr<igfx::IBuffer>(nullptr);
 	return nctl::move(buffer);

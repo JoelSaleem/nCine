@@ -80,6 +80,9 @@ GLShaderProgram::~GLShaderProgram()
 #ifdef WITH_SCENEGRAPH
 	RenderResources::removeCameraUniformData(this);
 #endif
+#ifdef WITH_RHI
+	RenderResources::forgetProgram(rhiProgram());
+#endif
 }
 
 ///////////////////////////////////////////////////////////

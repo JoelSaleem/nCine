@@ -57,6 +57,7 @@ class GLTexture
 	void upload(unsigned int mipLevel, const void *data) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
 	bool download(unsigned int mipLevel, void *data) override;
+	bool reallocate(const igfx::TextureDesc &desc) override;
 #endif
 
   private:

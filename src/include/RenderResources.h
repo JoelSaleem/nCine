@@ -171,6 +171,8 @@ class RenderResources
 	static inline igfx::ICommandList &rhiCommandList() { return *rhiCommandList_; }
 	/// Returns the cached pipeline matching the description, creating it on first use
 	static igfx::IPipeline &rhiPipeline(const igfx::PipelineDesc &desc);
+	/// Drops the cached pipelines of a program that is going away
+	static void forgetProgram(const igfx::IShaderProgram &program);
 #endif
 #ifdef WITH_SCENEGRAPH
 	static inline RenderCommandPool &renderCommandPool() { return *renderCommandPool_; }

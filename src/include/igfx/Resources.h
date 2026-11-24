@@ -33,6 +33,8 @@ class ITexture
 	virtual void setSampler(const SamplerDesc &sampler) = 0;
 	/// Reads a full mip level back, tightly packed in the texture format
 	virtual bool download(unsigned int mipLevel, void *data) = 0;
+	/// New storage with undefined contents, keeping the object identity users refer to
+	virtual bool reallocate(const TextureDesc &desc) = 0;
 };
 
 /// A vertex + fragment program compiled from GLSL, with reflection of its live interface

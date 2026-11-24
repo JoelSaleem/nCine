@@ -63,7 +63,7 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	// Push descriptor set: the loose uniforms block, the other uniform blocks and the samplers
 	nctl::StaticArray<VkDescriptorSetLayoutBinding, MaxBindings> bindings;
 	const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	looseBinding_ = (program_->looseUniformsSize() > 0) ? program_->looseUniformsBinding() : -1;
+	looseBinding_ = (program_->looseBlockSize() > 0) ? program_->looseUniformsBinding() : -1;
 	if (looseBinding_ >= 0)
 		bindings.pushBack({ static_cast<uint32_t>(looseBinding_), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, stages, nullptr });
 	for (const igfx::UniformBlockInfo &block : program_->uniformBlocks())
@@ -76,6 +76,7 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 		if (uniform.type == igfx::UniformType::SAMPLER_2D)
 		{
 			samplerBindings_.pushBack(uniform.binding);
+			samplerUnitOffsets_.pushBack(uniform.offset);
 			bindings.pushBack({ static_cast<uint32_t>(uniform.binding), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, stages, nullptr });
 		}
 	}
@@ -208,12 +209,11 @@ VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat
 
 VkRhiPipeline::~VkRhiPipeline()
 {
+	// Frames in flight may still be bound to them
 	for (const Variant &variant : variants_)
-		vkDestroyPipeline(device_.device_, variant.pipeline, nullptr);
-	if (layout_ != VK_NULL_HANDLE)
-		vkDestroyPipelineLayout(device_.device_, layout_, nullptr);
-	if (setLayout_ != VK_NULL_HANDLE)
-		vkDestroyDescriptorSetLayout(device_.device_, setLayout_, nullptr);
+		device_.destroyLater(VK_OBJECT_TYPE_PIPELINE, variant.pipeline);
+	device_.destroyLater(VK_OBJECT_TYPE_PIPELINE_LAYOUT, layout_);
+	device_.destroyLater(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, setLayout_);
 }
 
 }

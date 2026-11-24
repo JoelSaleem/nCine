@@ -39,15 +39,39 @@ namespace {
 }
 
 VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
-    : device_(device), desc_(desc), format_(formatToVk(desc.format))
+    : device_(device), desc_(desc)
 {
+	create();
+}
+
+VkRhiTexture::~VkRhiTexture()
+{
+	release();
+}
+
+bool VkRhiTexture::reallocate(const igfx::TextureDesc &desc)
+{
+	release();
+	desc_ = desc;
+	if (create() == false)
+		return false;
+	for (unsigned int level = 0; level < desc_.mipLevels; level++)
+		upload(level, nullptr);
+	return true;
+}
+
+bool VkRhiTexture::create()
+{
+	const igfx::TextureDesc &desc = desc_;
+	format_ = formatToVk(desc.format);
 	for (VkImageLayout &layout : layouts_)
 		layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	if (format_ == VK_FORMAT_UNDEFINED || desc.width <= 0 || desc.height <= 0 || desc.mipLevels == 0 || desc.mipLevels > MaxMipLevels)
 	{
 		LOGE_X("Unsupported Vulkan texture: %dx%d, format %d, %u levels", desc.width, desc.height, static_cast<int>(desc.format), desc.mipLevels);
-		return;
+		return false;
 	}
 
 	VkImageCreateInfo imageInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -66,7 +90,7 @@ VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
 	{
 		LOGE_X("Cannot create a %dx%d Vulkan image", desc.width, desc.height);
 		image_ = VK_NULL_HANDLE;
-		return;
+		return false;
 	}
 
 	VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
@@ -83,22 +107,26 @@ VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
 	vkCreateImageView(device_.device_, &viewInfo, nullptr, &view_);
 
 	setSampler(desc.sampler);
+	return true;
 }
 
-VkRhiTexture::~VkRhiTexture()
+/// Frames in flight may still sample or render into the old handles
+void VkRhiTexture::release()
 {
-	if (depthView_ != VK_NULL_HANDLE)
-		vkDestroyImageView(device_.device_, depthView_, nullptr);
-	if (depthImage_ != VK_NULL_HANDLE)
-		vmaDestroyImage(device_.allocator_, depthImage_, depthAllocation_);
-	if (attachmentView_ != VK_NULL_HANDLE)
-		vkDestroyImageView(device_.device_, attachmentView_, nullptr);
-	if (sampler_ != VK_NULL_HANDLE)
-		vkDestroySampler(device_.device_, sampler_, nullptr);
-	if (view_ != VK_NULL_HANDLE)
-		vkDestroyImageView(device_.device_, view_, nullptr);
-	if (image_ != VK_NULL_HANDLE)
-		vmaDestroyImage(device_.allocator_, image_, allocation_);
+	device_.destroyLater(VK_OBJECT_TYPE_IMAGE_VIEW, depthView_);
+	device_.destroyLater(VK_OBJECT_TYPE_IMAGE, depthImage_, depthAllocation_);
+	device_.destroyLater(VK_OBJECT_TYPE_IMAGE_VIEW, attachmentView_);
+	device_.destroyLater(VK_OBJECT_TYPE_SAMPLER, sampler_);
+	device_.destroyLater(VK_OBJECT_TYPE_IMAGE_VIEW, view_);
+	device_.destroyLater(VK_OBJECT_TYPE_IMAGE, image_, allocation_);
+	depthView_ = VK_NULL_HANDLE;
+	depthImage_ = VK_NULL_HANDLE;
+	depthAllocation_ = nullptr;
+	attachmentView_ = VK_NULL_HANDLE;
+	sampler_ = VK_NULL_HANDLE;
+	view_ = VK_NULL_HANDLE;
+	image_ = VK_NULL_HANDLE;
+	allocation_ = nullptr;
 }
 
 bool VkRhiTexture::prepareRenderTarget()
@@ -194,7 +222,7 @@ void VkRhiTexture::upload(unsigned int mipLevel, const void *data)
 
 	igfx::BufferDesc stagingDesc;
 	stagingDesc.size = static_cast<unsigned long>(width) * height * storedBytesPerPixel();
-	VkRhiBuffer staging(device_.allocator_, stagingDesc);
+	VkRhiBuffer staging(device_, stagingDesc);
 	if (staging.isValid() == false)
 		return;
 
@@ -222,6 +250,7 @@ void VkRhiTexture::upload(unsigned int mipLevel, const void *data)
 		vkCmdCopyBufferToImage(commandBuffer, staging.handle(), image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		transitionLevel(commandBuffer, mipLevel, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	});
+	staging.destroyNow(); // the submit has been waited for
 }
 
 bool VkRhiTexture::download(unsigned int mipLevel, void *data)
@@ -233,7 +262,7 @@ bool VkRhiTexture::download(unsigned int mipLevel, void *data)
 	const unsigned int height = levelHeight(mipLevel);
 	igfx::BufferDesc stagingDesc;
 	stagingDesc.size = static_cast<unsigned long>(width) * height * storedBytesPerPixel();
-	VkRhiBuffer staging(device_.allocator_, stagingDesc);
+	VkRhiBuffer staging(device_, stagingDesc);
 	if (staging.isValid() == false)
 		return false;
 
@@ -261,18 +290,15 @@ bool VkRhiTexture::download(unsigned int mipLevel, void *data)
 	}
 	else
 		memcpy(dst, src, stagingDesc.size);
+	staging.destroyNow();
 	return true;
 }
 
 void VkRhiTexture::setSampler(const igfx::SamplerDesc &sampler)
 {
 	desc_.sampler = sampler;
-	if (sampler_ != VK_NULL_HANDLE)
-	{
-		// ponytail: waits for the GPU, samplers change rarely; keep the old one alive per frame if this shows up in profiles
-		vkDeviceWaitIdle(device_.device_);
-		vkDestroySampler(device_.device_, sampler_, nullptr);
-	}
+	device_.destroyLater(VK_OBJECT_TYPE_SAMPLER, sampler_);
+	sampler_ = VK_NULL_HANDLE;
 
 	VkSamplerCreateInfo samplerInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 	samplerInfo.magFilter = filterToVk(sampler.magFilter);

@@ -32,8 +32,11 @@ struct VkSurfaceProvider
 class VkRhiBuffer : public igfx::IBuffer
 {
   public:
-	VkRhiBuffer(VmaAllocator allocator, const igfx::BufferDesc &desc);
+	VkRhiBuffer(VkRhiDevice &device, const igfx::BufferDesc &desc);
+	/// Destroyed once the frames that may use it are done
 	~VkRhiBuffer() override;
+	/// For buffers no frame uses, like staging after an immediate submit
+	void destroyNow();
 
 	inline bool isValid() const { return buffer_ != VK_NULL_HANDLE; }
 	inline VkBuffer handle() const { return buffer_; }
@@ -46,7 +49,7 @@ class VkRhiBuffer : public igfx::IBuffer
 	void invalidate(unsigned long offset, unsigned long size);
 
   private:
-	VmaAllocator allocator_;
+	VkRhiDevice &device_;
 	igfx::BufferDesc desc_;
 	VkBuffer buffer_ = VK_NULL_HANDLE;
 	VmaAllocation allocation_ = nullptr;
@@ -66,7 +69,9 @@ class VkRhiShaderProgram : public igfx::IShaderProgram
 	const nctl::Array<igfx::UniformInfo> &uniforms() const override { return uniforms_; }
 	const nctl::Array<igfx::UniformBlockInfo> &uniformBlocks() const override { return uniformBlocks_; }
 	const nctl::Array<igfx::AttributeInfo> &attributes() const override { return attributes_; }
-	int looseUniformsSize() const override { return looseUniformsSize_; }
+	/// Bytes of loose uniform storage: the default block, then one texture unit per sampler
+	int looseUniformsSize() const override { return looseStorageSize_; }
+	inline int looseBlockSize() const { return looseUniformsSize_; }
 
 	/// Descriptor binding of the default uniform block, -1 when the program has no loose uniforms
 	inline int looseUniformsBinding() const { return looseUniformsBinding_; }
@@ -85,6 +90,7 @@ class VkRhiShaderProgram : public igfx::IShaderProgram
 	nctl::Array<igfx::UniformBlockInfo> uniformBlocks_ = nctl::Array<igfx::UniformBlockInfo>(4);
 	nctl::Array<igfx::AttributeInfo> attributes_ = nctl::Array<igfx::AttributeInfo>(8);
 	int looseUniformsSize_ = 0;
+	int looseStorageSize_ = 0;
 	int looseUniformsBinding_ = -1;
 	VkShaderModule vertexModule_ = VK_NULL_HANDLE;
 	VkShaderModule fragmentModule_ = VK_NULL_HANDLE;
@@ -124,6 +130,8 @@ class VkRhiPipeline : public igfx::IPipeline
 	nctl::StaticArray<int, MaxBindings> blockBindings_;
 	/// Sampler `k` reads texture unit `k`
 	nctl::StaticArray<int, MaxBindings> samplerBindings_;
+	/// Where each sampler's texture unit is in the program's loose storage
+	nctl::StaticArray<int, MaxBindings> samplerUnitOffsets_;
 
 	friend class VkRhiCommandList;
 };
@@ -146,6 +154,7 @@ class VkRhiTexture : public igfx::ITexture
 	void upload(unsigned int mipLevel, const void *data) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
 	bool download(unsigned int mipLevel, void *data) override;
+	bool reallocate(const igfx::TextureDesc &desc) override;
 
   private:
 	static const unsigned int MaxMipLevels = 16;
@@ -164,6 +173,8 @@ class VkRhiTexture : public igfx::ITexture
 	VkImageView depthView_ = VK_NULL_HANDLE;
 	VkImageLayout depthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
+	bool create();
+	void release();
 	unsigned int levelWidth(unsigned int mipLevel) const;
 	unsigned int levelHeight(unsigned int mipLevel) const;
 	/// Bytes per pixel as stored, which differs from the upload format for RGB8
@@ -268,6 +279,14 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	/// Must be called outside a render pass, it submits the work recorded so far and waits for it
 	bool readbackFrame(uint8_t *rgbPixels, int width, int height) override;
 
+	/// Destroys a handle once the frames recorded so far are done with it
+	template <class Handle>
+	void destroyLater(VkObjectType type, Handle handle, VmaAllocation allocation = nullptr)
+	{
+		if (handle != VK_NULL_HANDLE)
+			garbage_[garbageSlot_].pushBack({ type, (uint64_t)(handle), allocation });
+	}
+
 	/// Records commands with `record(VkCommandBuffer)` in a separate command buffer, submits it and waits
 	template <class Recorder>
 	void immediateSubmit(Recorder &&record)
@@ -338,6 +357,18 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	bool imageAvailablePending_ = false;
 	VkRhiCommandList commandList_;
 
+	struct Garbage
+	{
+		VkObjectType type;
+		uint64_t handle;
+		VmaAllocation allocation;
+	};
+	nctl::Array<Garbage> garbage_[FramesInFlight];
+	/// The slot of the last frame begun, its fence covers everything recorded until the next one
+	unsigned int garbageSlot_ = 0;
+	/// No swapchain image this frame (zero sized or lost surface), nothing is drawn or presented
+	bool frameSkipped_ = false;
+
 	nctl::UniquePtr<VkRhiBuffer> readbackBuffer_;
 	/// Transient uniform data (loose uniforms) of each frame in flight
 	static const unsigned long FrameUniformsSize = 1024 * 1024;
@@ -358,6 +389,7 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	bool createSwapchain();
 	void destroySwapchain();
 	bool recreateSwapchain();
+	void collectGarbage(unsigned int slot);
 	/// Ends, submits and waits for the current command buffer, then begins it again
 	void submitAndWait();
 	void transitionImage(VkImage image, VkImageAspectFlags aspect, VkImageLayout oldLayout, VkImageLayout newLayout,
@@ -366,6 +398,7 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT types,
 	                                                    const VkDebugUtilsMessengerCallbackDataEXT *data, void *userData);
 
+	friend class VkRhiBuffer;
 	friend class VkRhiCommandList;
 	friend class VkRhiTexture;
 	friend class VkRhiPipeline;

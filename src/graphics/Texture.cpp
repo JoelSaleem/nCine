@@ -523,9 +523,15 @@ void Texture::initialize(const ITextureLoader &texLoader)
 		desc.mipLevels = static_cast<unsigned int>(texLoader.mipMapCount());
 		desc.sampler = rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_);
 		FATAL_ASSERT_MSG_X(desc.format != igfx::Format::UNDEFINED, "Texture format 0x%x is not supported on Vulkan yet", internalFormat);
-		if (rhiTexture_ == nullptr || rhiTexture_->desc().width != desc.width || rhiTexture_->desc().height != desc.height ||
-		    rhiTexture_->desc().format != desc.format || rhiTexture_->desc().mipLevels != desc.mipLevels)
+		if (rhiTexture_ == nullptr)
 			rhiTexture_ = RenderResources::rhiDevice().createTexture(desc);
+		else if (rhiTexture_->desc().width != desc.width || rhiTexture_->desc().height != desc.height ||
+		         rhiTexture_->desc().format != desc.format || rhiTexture_->desc().mipLevels != desc.mipLevels)
+		{
+			// Same object, materials keep pointing at it
+			const bool reallocated = rhiTexture_->reallocate(desc);
+			FATAL_ASSERT_MSG_X(reallocated, "Cannot reallocate the texture as %dx%d", desc.width, desc.height);
+		}
 		else
 			rhiTexture_->setSampler(desc.sampler);
 
