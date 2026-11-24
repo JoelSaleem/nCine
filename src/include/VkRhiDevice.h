@@ -27,6 +27,8 @@ struct VkSurfaceProvider
 	int height = 0;
 	/// Enables `VK_LAYER_KHRONOS_validation` when installed
 	bool enableValidation = false;
+	/// Without it the swapchain presents as soon as a frame is ready (immediate or mailbox, when supported)
+	bool vsync = true;
 };
 
 class VkRhiBuffer : public igfx::IBuffer
@@ -355,6 +357,7 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	VkImageLayout depthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 	int requestedWidth_ = 0;
 	int requestedHeight_ = 0;
+	bool vsync_ = true;
 
 	Frame frames_[FramesInFlight];
 	unsigned int frameIndex_ = 0;

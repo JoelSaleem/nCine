@@ -23,6 +23,7 @@ nctl::UniquePtr<igfx::IDevice> createGlfwVulkanDevice()
 	provider.width = theApplication().gfxDevice().drawableWidth();
 	provider.height = theApplication().gfxDevice().drawableHeight();
 	provider.enableValidation = (std::getenv("NCINE_VK_VALIDATION") != nullptr);
+	provider.vsync = theApplication().appConfiguration().graphics.vsync;
 
 	nctl::UniquePtr<VkRhiDevice> device = nctl::makeUnique<VkRhiDevice>(provider);
 	FATAL_ASSERT_MSG(device->isValid(), "Cannot create the Vulkan device");

@@ -563,6 +563,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VkRhiDevice::debugCallback(VkDebugUtilsMessageSev
 bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 {
 	requestedWidth_ = provider.width;
+	vsync_ = provider.vsync;
 	requestedHeight_ = provider.height;
 
 	if (createInstance(provider) == false)
@@ -823,9 +824,24 @@ bool VkRhiDevice::createSwapchain()
 	swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapchainInfo.preTransform = capabilities.currentTransform;
 	swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // the only mode every implementation supports
+	swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // vsync, the only mode every implementation supports
+	if (vsync_ == false)
+	{
+		uint32_t numModes = 0;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &numModes, nullptr);
+		nctl::Array<VkPresentModeKHR> modes(numModes);
+		modes.setSize(numModes);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &numModes, modes.data());
+		for (VkPresentModeKHR mode : modes)
+		{
+			if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR || (mode == VK_PRESENT_MODE_MAILBOX_KHR && swapchainInfo.presentMode == VK_PRESENT_MODE_FIFO_KHR))
+				swapchainInfo.presentMode = mode;
+		}
+	}
 	swapchainInfo.clipped = VK_TRUE;
 	VK_CHECK(vkCreateSwapchainKHR(device_, &swapchainInfo, nullptr, &swapchain_));
+	LOGI_X("Vulkan swapchain %ux%u, present mode %s", swapchainExtent_.width, swapchainExtent_.height,
+	       swapchainInfo.presentMode == VK_PRESENT_MODE_FIFO_KHR ? "FIFO (vsync)" : swapchainInfo.presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "IMMEDIATE" : "MAILBOX");
 
 	vkGetSwapchainImagesKHR(device_, swapchain_, &numImages, nullptr);
 	nctl::Array<VkImage> images(numImages);

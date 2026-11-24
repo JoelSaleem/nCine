@@ -52,6 +52,8 @@ if [ "$BACKEND" = vulkan ]; then
 	# The validation layer costs more than the frame itself, perf runs go without it
 	case "$cmd" in capture-perf|check-perf|all-perf) ;; *) export NCINE_VK_VALIDATION=1;; esac
 fi
+# Perf measures uncapped frames: a real display would otherwise pace both backends at its refresh rate
+case "$cmd" in capture-perf|check-perf|all-perf) export NCINE_APPCFG_GRAPHICS_VSYNC=0;; esac
 # One baseline per backend: their frame times are not comparable
 PERF_BASELINE="$GOLDENS/perf_baseline.json"
 [ "$BACKEND" = vulkan ] && PERF_BASELINE="$GOLDENS/perf_baseline_vulkan.json"
