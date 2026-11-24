@@ -17,6 +17,7 @@ apptest_meshdeform
 apptest_meshsprites
 apptest_multitouch
 apptest_particles
+apptest_rendertargets
 apptest_rotozoom
 apptest_scaling
 apptest_shaders

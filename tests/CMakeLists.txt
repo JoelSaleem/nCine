@@ -70,7 +70,7 @@ if("${NCINE_OPTIONS_PRESETS}" STREQUAL "LuaDist")
 else()
 	if(NCINE_WITH_SCENEGRAPH)
 		if(PNG_FOUND)
-			list(APPEND APPTESTS apptest_clear apptest_texformats apptest_joystick apptest_rotozoom apptest_animsprites
+			list(APPEND APPTESTS apptest_clear apptest_rendertargets apptest_texformats apptest_joystick apptest_rotozoom apptest_animsprites
 				apptest_particles apptest_font apptest_multitouch apptest_camera apptest_meshsprites
 				apptest_meshdeform apptest_sinescroller apptest_clones apptest_shaders apptest_bunnymark)
 			list(APPEND apptest_bunnymark_EXTRA_SOURCES Statistics.h Statistics.cpp)
