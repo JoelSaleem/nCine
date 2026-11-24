@@ -396,7 +396,8 @@ void Application::initCommon()
 #endif
 
 #ifdef WITH_IMGUI
-	if (usingVulkan() == false)
+	// ponytail: Vulkan draws ImGui through the scenegraph only, the direct (no scenegraph) path is still OpenGL
+	if (usingVulkan() == false || appCfg_.features.scenegraph)
 		imguiDrawing_ = nctl::makeUnique<ImGuiDrawing>(appCfg_.features.scenegraph);
 #endif
 #ifdef WITH_NUKLEAR

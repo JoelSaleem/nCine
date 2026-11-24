@@ -82,6 +82,22 @@ ImGuiDrawing::ImGuiDrawing(bool withSceneGraph)
 	        ? GLShaderProgram::QueryPhase::DEFERRED
 	        : GLShaderProgram::QueryPhase::IMMEDIATE;
 
+#ifdef WITH_RHI
+	if (igfx::isVulkanSelected())
+	{
+		// Same sources, compiled by the Vulkan device and described by a reflection-backed program
+		rhiShaderProgram_ = RenderResources::rhiDevice().createShaderProgram(ShaderStrings::imgui_vs + 1, ShaderStrings::imgui_fs + 1, "ImGui");
+		FATAL_ASSERT_MSG(rhiShaderProgram_->linkStatus() == igfx::IShaderProgram::Status::LINKED, "Failed to compile the ImGui shader program");
+		imguiShaderProgram_ = nctl::makeUnique<GLShaderProgram>(*rhiShaderProgram_);
+		imguiShaderProgram_->setSortId(GLShaderProgram::FirstUserSortId - 1);
+		if (withSceneGraph == false)
+			setupBuffersAndShader();
+		ImGui::StyleColorsDark();
+		ImGui::GetStyle().FrameRounding = 3.0f;
+		ImGui::GetStyle().GrabRounding = 3.0f;
+		return;
+	}
+#endif
 	imguiShaderProgram_ = nctl::makeUnique<GLShaderProgram>(queryPhase);
 	imguiShaderProgram_->setSortId(GLShaderProgram::FirstUserSortId - 1); // fixed, after the default programs
 
@@ -182,6 +198,15 @@ void ImGuiDrawing::endFrame()
 
 void ImGuiDrawing::destroyTexture(ImTextureData *tex)
 {
+#ifdef WITH_RHI
+	if (igfx::isVulkanSelected())
+	{
+		rhiTextures_.remove(reinterpret_cast<igfx::ITexture *>(tex->TexID));
+		tex->SetTexID(ImTextureID_Invalid);
+		tex->SetStatus(ImTextureStatus_Destroyed);
+		return;
+	}
+#endif
 	GLTexture *texturePtr = (GLTexture *)(intptr_t)tex->TexID;
 	textures_.remove(texturePtr);
 
@@ -192,6 +217,36 @@ void ImGuiDrawing::destroyTexture(ImTextureData *tex)
 
 void ImGuiDrawing::updateTexture(ImTextureData *tex)
 {
+#ifdef WITH_RHI
+	if (igfx::isVulkanSelected())
+	{
+		if (tex->Status == ImTextureStatus_WantCreate)
+		{
+			IM_ASSERT(tex->Format == ImTextureFormat_RGBA32);
+			igfx::TextureDesc desc;
+			desc.width = tex->Width;
+			desc.height = tex->Height;
+			desc.format = igfx::Format::RGBA8; // bilinear and clamped, as the OpenGL path sets it up
+			nctl::UniquePtr<igfx::ITexture> texture = RenderResources::rhiDevice().createTexture(desc);
+			texture->upload(0, tex->GetPixels());
+			igfx::ITexture *texturePtr = texture.get();
+			if (rhiTextures_.loadFactor() >= 0.8f)
+				rhiTextures_.rehash(rhiTextures_.capacity() * 2);
+			rhiTextures_.insert(texturePtr, nctl::move(texture));
+			tex->SetTexID(reinterpret_cast<ImTextureID>(texturePtr));
+			tex->SetStatus(ImTextureStatus_OK);
+		}
+		else if (tex->Status == ImTextureStatus_WantUpdates)
+		{
+			// ponytail: re-uploads the whole atlas from ImGui's copy; upload `tex->Updates` regions when atlas growth shows in profiles
+			reinterpret_cast<igfx::ITexture *>(tex->TexID)->upload(0, tex->GetPixels());
+			tex->SetStatus(ImTextureStatus_OK);
+		}
+		else if (tex->Status == ImTextureStatus_WantDestroy && tex->UnusedFrames > 0)
+			destroyTexture(tex);
+		return;
+	}
+#endif
 	// Backup GL_UNPACK state that we modify, restore on exit.
 	GLint lastUnpackRowLength = 0; (void)lastUnpackRowLength;
 	GLint lastUnpackAlignment = 0; (void)lastUnpackAlignment;
@@ -308,7 +363,9 @@ void ImGuiDrawing::setupRenderCmd(RenderCommand &cmd)
 	Material &material = cmd.material();
 	material.setShaderProgram(imguiShaderProgram_.get());
 	material.reserveUniformsDataMemory();
-	material.uniform(UniformNames::Texture)->setIntValue(0); // GL_TEXTURE0
+	GLUniformCache *textureUniform = material.uniform(UniformNames::Texture);
+	if (textureUniform) // a descriptor, not a uniform, on Vulkan
+		textureUniform->setIntValue(0); // GL_TEXTURE0
 	imguiShaderProgram_->attribute(AttributeNames::Position)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, pos)));
 	imguiShaderProgram_->attribute(AttributeNames::TexCoords)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, uv)));
 	imguiShaderProgram_->attribute(AttributeNames::Color)->setVboParameters(sizeof(ImDrawVert), reinterpret_cast<void *>(offsetof(ImDrawVert, col)));
@@ -401,7 +458,15 @@ void ImGuiDrawing::draw(RenderQueue &renderQueue)
 			currCmd.geometry().setFirstVertex(imCmd->VtxOffset);
 			currCmd.setLayer(theApplication().guiSettings().imguiLayer);
 			currCmd.setVisitOrder(numCmd);
-			currCmd.material().setTexture(reinterpret_cast<GLTexture *>(imCmd->GetTexID()));
+#ifdef WITH_RHI
+			if (igfx::isVulkanSelected())
+			{
+				currCmd.material().setTexture(static_cast<const GLTexture *>(nullptr));
+				currCmd.material().setRhiTexture(0, reinterpret_cast<igfx::ITexture *>(imCmd->GetTexID()));
+			}
+			else
+#endif
+				currCmd.material().setTexture(reinterpret_cast<GLTexture *>(imCmd->GetTexID()));
 
 			renderQueue.addCommand(&currCmd);
 			numCmd++;
