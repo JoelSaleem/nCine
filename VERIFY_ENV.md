@@ -64,3 +64,9 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNCINE_PREFERRED_BACKEN
 ```
 
 Baseline: upstream `a1b5f40a`, unit tests 117/117 pass.
+
+## Perf baselines
+
+One baseline per backend, `goldens/perf_baseline.json` (GL) and `goldens/perf_baseline_vulkan.json`, since frame times
+of different backends are not comparable. Vulkan perf runs skip the validation layer: `./tools/verify.sh check-perf
+--backend vulkan --build build-vk-rel`. On this headless host both are software rasterizers, so the gate is advisory.

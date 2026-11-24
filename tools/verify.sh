@@ -48,8 +48,13 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$BACKEND" = vulkan ]; then
-	export NCINE_GFX_BACKEND=vulkan NCINE_VK_VALIDATION=1
+	export NCINE_GFX_BACKEND=vulkan
+	# The validation layer costs more than the frame itself, perf runs go without it
+	case "$cmd" in capture-perf|check-perf|all-perf) ;; *) export NCINE_VK_VALIDATION=1;; esac
 fi
+# One baseline per backend: their frame times are not comparable
+PERF_BASELINE="$GOLDENS/perf_baseline.json"
+[ "$BACKEND" = vulkan ] && PERF_BASELINE="$GOLDENS/perf_baseline_vulkan.json"
 
 apptests() {
 	if [ -n "$ONLY" ]; then tr ',' '\n' <<<"$ONLY"; else cat "$GOLDENS/apptest_list.txt"; fi
@@ -127,11 +132,11 @@ case "$cmd" in
 		echo "backend=$BACKEND pass=$pass fail=$fail skip=$skip"
 		exit $rc;;
 	capture-perf)
-		perf_json "$GOLDENS/perf_baseline.json";;
+		perf_json "$PERF_BASELINE";;
 	check-perf|all-perf)
 		[ "$cmd" = all-perf ] && ONLY=""
 		perf_json "$TMPD/perf_sample.json"
-		"$PY" tools/perf_check.py "$GOLDENS/perf_baseline.json" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
+		"$PY" tools/perf_check.py "$PERF_BASELINE" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
 	compare-backends)
 		# Same binary, both backends: compatible shader reflection and identical texture readback
 		NCINE_DUMP_REFLECTION="$TMPD/gl.txt" NCINE_CAPTURE="$TMPD/gl.png" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/apptest_clear" >"$TMPD/gl.log" 2>&1 || true
