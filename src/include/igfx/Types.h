@@ -39,8 +39,23 @@ enum class Format
 	RGBA8,
 	BGRA8, // common swapchain format
 	D24S8,
-	D32F
+	D32F,
+	BC1_RGB, // DXT1
+	BC1_RGBA, // DXT1 with one bit alpha
+	BC2, // DXT3
+	BC3 // DXT5
 };
+
+/// Block compressed formats store 4x4 texel blocks
+inline bool isCompressed(Format format)
+{
+	return format == Format::BC1_RGB || format == Format::BC1_RGBA || format == Format::BC2 || format == Format::BC3;
+}
+
+inline unsigned int compressedBlockBytes(Format format)
+{
+	return (format == Format::BC1_RGB || format == Format::BC1_RGBA) ? 8 : 16;
+}
 
 inline unsigned int bytesPerPixel(Format format)
 {
@@ -53,9 +68,21 @@ inline unsigned int bytesPerPixel(Format format)
 		case Format::BGRA8:
 		case Format::D24S8:
 		case Format::D32F: return 4;
+		case Format::BC1_RGB:
+		case Format::BC1_RGBA:
+		case Format::BC2:
+		case Format::BC3: // not per pixel, see `levelDataSize()`
 		case Format::UNDEFINED: return 0;
 	}
 	return 0;
+}
+
+/// Bytes of a tightly packed mip level of the given size
+inline unsigned long levelDataSize(Format format, unsigned int width, unsigned int height)
+{
+	if (isCompressed(format))
+		return static_cast<unsigned long>((width + 3) / 4) * ((height + 3) / 4) * compressedBlockBytes(format);
+	return static_cast<unsigned long>(width) * height * bytesPerPixel(format);
 }
 
 /// Vertex attribute component layouts

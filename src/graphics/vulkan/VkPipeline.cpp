@@ -1,3 +1,4 @@
+#include <cstring>
 #include "VkRhiDevice.h"
 #include "common_macros.h"
 
@@ -93,14 +94,15 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	vkCreatePipelineLayout(device_.device_, &layoutInfo, nullptr, &layout_);
 }
 
-VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat, bool flippedViewport)
+VkPipeline VkRhiPipeline::pipelineFor(const VkFormat *colorFormats, unsigned int numColors, VkFormat depthFormat, bool flippedViewport)
 {
 	for (const Variant &variant : variants_)
 	{
-		if (variant.colorFormat == colorFormat && variant.depthFormat == depthFormat && variant.flippedViewport == flippedViewport)
+		if (variant.numColors == numColors && memcmp(variant.colorFormats, colorFormats, numColors * sizeof(VkFormat)) == 0 &&
+		    variant.depthFormat == depthFormat && variant.flippedViewport == flippedViewport)
 			return variant.pipeline;
 	}
-	if (isValid() == false || variants_.size() == variants_.capacity())
+	if (isValid() == false || variants_.size() == variants_.capacity() || numColors > igfx::RenderPassDesc::MaxColorTargets)
 		return VK_NULL_HANDLE;
 
 	VkPipelineShaderStageCreateInfo shaderStages[2] = { { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO }, { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO } };
@@ -154,8 +156,10 @@ VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
 	VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-	depthStencil.depthTestEnable = desc_.depth.testEnabled ? VK_TRUE : VK_FALSE;
-	depthStencil.depthWriteEnable = desc_.depth.writeEnabled ? VK_TRUE : VK_FALSE;
+	// No depth attachment means no depth test, like an OpenGL framebuffer without a depth buffer
+	const bool hasDepth = (depthFormat != VK_FORMAT_UNDEFINED);
+	depthStencil.depthTestEnable = (desc_.depth.testEnabled && hasDepth) ? VK_TRUE : VK_FALSE;
+	depthStencil.depthWriteEnable = (desc_.depth.writeEnabled && hasDepth) ? VK_TRUE : VK_FALSE;
 	depthStencil.depthCompareOp = CompareOps[static_cast<int>(desc_.depth.compareOp)];
 
 	VkPipelineColorBlendAttachmentState blendAttachment = {};
@@ -168,9 +172,13 @@ VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat
 	blendAttachment.dstAlphaBlendFactor = blendAttachment.dstColorBlendFactor;
 	blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	// The same blending for every render target, as glBlendFunc() sets it
+	VkPipelineColorBlendAttachmentState blendAttachments[igfx::RenderPassDesc::MaxColorTargets];
+	for (unsigned int i = 0; i < numColors; i++)
+		blendAttachments[i] = blendAttachment;
 	VkPipelineColorBlendStateCreateInfo colorBlend = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-	colorBlend.attachmentCount = 1;
-	colorBlend.pAttachments = &blendAttachment;
+	colorBlend.attachmentCount = numColors;
+	colorBlend.pAttachments = blendAttachments;
 
 	const VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
@@ -178,8 +186,8 @@ VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat
 	dynamicState.pDynamicStates = dynamicStates;
 
 	VkPipelineRenderingCreateInfo renderingInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
-	renderingInfo.colorAttachmentCount = 1;
-	renderingInfo.pColorAttachmentFormats = &colorFormat;
+	renderingInfo.colorAttachmentCount = numColors;
+	renderingInfo.pColorAttachmentFormats = colorFormats;
 	renderingInfo.depthAttachmentFormat = depthFormat;
 	if (depthFormat == VK_FORMAT_D24_UNORM_S8_UINT || depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT)
 		renderingInfo.stencilAttachmentFormat = depthFormat;
@@ -203,7 +211,13 @@ VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat
 		LOGE("vkCreateGraphicsPipelines() failed");
 		return VK_NULL_HANDLE;
 	}
-	variants_.pushBack({ colorFormat, depthFormat, flippedViewport, pipeline });
+	Variant variant = {};
+	memcpy(variant.colorFormats, colorFormats, numColors * sizeof(VkFormat));
+	variant.numColors = numColors;
+	variant.depthFormat = depthFormat;
+	variant.flippedViewport = flippedViewport;
+	variant.pipeline = pipeline;
+	variants_.pushBack(variant);
 	return pipeline;
 }
 

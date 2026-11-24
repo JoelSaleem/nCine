@@ -123,10 +123,56 @@ int main(int argc, char **argv)
 				if (same == false)
 					printf("texture format %d level %u does not round-trip\n", static_cast<int>(format), level);
 				texturesOk = texturesOk && same;
+
+				// A 5x3 region at (2, 4) from rows 9 pixels apart changes only that region
+				const unsigned int bpp = nc::igfx::bytesPerPixel(format);
+				const unsigned int levelWidth = desc.width >> level;
+				const int rx = 2, ry = 4, rw = 5, rh = 3, rowLength = 9;
+				unsigned char region[rowLength * rh * 4];
+				for (unsigned int i = 0; i < sizeof(region); i++)
+					region[i] = static_cast<unsigned char>(255 - i);
+				texture->uploadRegion(level, rx, ry, rw, rh, region, rowLength);
+				for (int row = 0; row < rh; row++)
+					memcpy(uploaded.get() + ((ry + row) * levelWidth + rx) * bpp, region + row * rowLength * bpp, rw * bpp);
+				const bool regionSame = texture->download(level, downloaded.get()) && memcmp(uploaded.get(), downloaded.get(), levelSize) == 0;
+				if (regionSame == false)
+					printf("texture format %d level %u region upload differs\n", static_cast<int>(format), level);
+				texturesOk = texturesOk && regionSame;
 			}
 			texturesOk = texturesOk && (texture != nullptr);
 		}
-		printf("textures %s\n", texturesOk ? "round-trip" : "FAIL");
+		printf("textures and regions %s\n", texturesOk ? "round-trip" : "FAIL");
+
+		// Loose uniforms arrive packed, as `glUniform*v()` takes them, and must land in the std140 default block
+		static const char *LooseVertex = "uniform mat3 uM3;\nuniform float uArr[3];\nuniform vec2 uV2;\n"
+		                                 "void main() { gl_Position = vec4(uM3 * vec3(uArr[0] + uArr[1] + uArr[2], uV2), 1.0); }\n";
+		static const char *LooseFragment = "out vec4 color;\nvoid main() { color = vec4(1.0); }\n";
+		nctl::UniquePtr<nc::igfx::IShaderProgram> looseProgram = device.createShaderProgram(LooseVertex, LooseFragment, "vktest_loose");
+		nc::VkRhiShaderProgram &vkLoose = static_cast<nc::VkRhiShaderProgram &>(*looseProgram);
+		bool looseOk = (looseProgram->linkStatus() == nc::igfx::IShaderProgram::Status::LINKED);
+		nctl::UniquePtr<uint8_t[]> packed = nctl::makeUnique<uint8_t[]>(static_cast<unsigned long>(looseProgram->looseUniformsSize()));
+		float value = 1.0f;
+		for (const nc::igfx::UniformInfo &uniform : looseProgram->uniforms())
+		{
+			const unsigned int numFloats = (uniform.type == nc::igfx::UniformType::FLOAT_MAT3) ? 9 : (uniform.type == nc::igfx::UniformType::FLOAT_VEC2) ? 2 : uniform.arraySize;
+			for (unsigned int i = 0; i < numFloats; i++, value += 1.0f)
+				memcpy(packed.get() + uniform.offset + i * 4, &value, 4);
+		}
+		vkLoose.writeLooseUniforms(packed.get(), 0xffffffffu);
+		for (const nc::igfx::UniformInfo &uniform : looseProgram->uniforms())
+		{
+			const float *packedValues = reinterpret_cast<const float *>(packed.get() + uniform.offset);
+			const float *std140 = reinterpret_cast<const float *>(vkLoose.looseUniformsStorage() + uniform.offset);
+			if (uniform.type == nc::igfx::UniformType::FLOAT_MAT3) // three vec4 columns
+				looseOk = looseOk && memcmp(std140, packedValues, 12) == 0 && memcmp(std140 + 4, packedValues + 3, 12) == 0 && memcmp(std140 + 8, packedValues + 6, 12) == 0;
+			else if (uniform.type == nc::igfx::UniformType::FLOAT) // float[3], 16 bytes apart
+				looseOk = looseOk && uniform.arraySize == 3 && std140[0] == packedValues[0] && std140[4] == packedValues[1] && std140[8] == packedValues[2];
+			else if (uniform.type == nc::igfx::UniformType::FLOAT_VEC2)
+				looseOk = looseOk && std140[0] == packedValues[0] && std140[1] == packedValues[1];
+		}
+		looseOk = looseOk && looseProgram->uniforms().size() == 3;
+		printf("loose uniforms (mat3, float[3], vec2) %s\n", looseOk ? "std140" : "FAIL");
+		texturesOk = texturesOk && looseOk;
 
 		const unsigned char *center = pixels.get() + ((height / 2) * width + width / 2) * 3;
 		const bool colorOk = readback && center[0] == ExpectedRgb[0] && center[1] == ExpectedRgb[1] && center[2] == ExpectedRgb[2];

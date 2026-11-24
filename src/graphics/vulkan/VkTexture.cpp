@@ -16,6 +16,10 @@ namespace {
 			case igfx::Format::RGB8: // stored with an alpha channel
 			case igfx::Format::RGBA8: return VK_FORMAT_R8G8B8A8_UNORM;
 			case igfx::Format::BGRA8: return VK_FORMAT_B8G8R8A8_UNORM;
+			case igfx::Format::BC1_RGB: return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+			case igfx::Format::BC1_RGBA: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+			case igfx::Format::BC2: return VK_FORMAT_BC2_UNORM_BLOCK;
+			case igfx::Format::BC3: return VK_FORMAT_BC3_UNORM_BLOCK;
 			default: return VK_FORMAT_UNDEFINED;
 		}
 	}
@@ -83,7 +87,9 @@ bool VkRhiTexture::create()
 	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	// ponytail: every texture can be a render target, as any `Texture` can be attached to a viewport later
-	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	if (igfx::isCompressed(desc.format) == false) // compressed formats cannot be attachments
+		imageInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	VmaAllocationCreateInfo allocationInfo = {};
 	allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	if (vmaCreateImage(device_.allocator_, &imageInfo, &allocationInfo, &image_, &allocation_, nullptr) != VK_SUCCESS)
@@ -133,7 +139,7 @@ bool VkRhiTexture::prepareRenderTarget()
 {
 	if (attachmentView_ != VK_NULL_HANDLE)
 		return true;
-	if (isValid() == false)
+	if (isValid() == false || igfx::isCompressed(desc_.format))
 		return false;
 
 	// Attachment views need the identity swizzle and a single level
@@ -211,42 +217,69 @@ void VkRhiTexture::upload(unsigned int mipLevel, const void *data)
 	if (isValid() == false || mipLevel >= desc_.mipLevels)
 		return;
 
-	const unsigned int width = levelWidth(mipLevel);
-	const unsigned int height = levelHeight(mipLevel);
 	if (data == nullptr)
 	{
 		// Storage only, contents stay undefined like `glTexImage2D()` with no data
 		device_.immediateSubmit([&](VkCommandBuffer commandBuffer) { transitionLevel(commandBuffer, mipLevel, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); });
 		return;
 	}
+	uploadRegion(mipLevel, 0, 0, static_cast<int>(levelWidth(mipLevel)), static_cast<int>(levelHeight(mipLevel)), data, 0);
+}
 
+void VkRhiTexture::uploadRegion(unsigned int mipLevel, int x, int y, int width, int height, const void *data, int rowLength)
+{
+	if (isValid() == false || mipLevel >= desc_.mipLevels || data == nullptr || width <= 0 || height <= 0 || x < 0 || y < 0 ||
+	    static_cast<unsigned int>(x + width) > levelWidth(mipLevel) || static_cast<unsigned int>(y + height) > levelHeight(mipLevel))
+	{
+		LOGE_X("Invalid texture region upload: level %u, %dx%d at %d,%d", mipLevel, width, height, x, y);
+		return;
+	}
+
+	const bool compressed = igfx::isCompressed(desc_.format);
+	if (compressed && (x != 0 || y != 0 || static_cast<unsigned int>(width) != levelWidth(mipLevel) ||
+	                   static_cast<unsigned int>(height) != levelHeight(mipLevel) || (rowLength != 0 && rowLength != width)))
+	{
+		LOGE("Compressed textures are uploaded a whole mip level at a time");
+		return;
+	}
+
+	const unsigned int srcBytesPerPixel = igfx::bytesPerPixel(desc_.format);
+	const unsigned int dstBytesPerPixel = storedBytesPerPixel();
+	const unsigned long srcPitch = static_cast<unsigned long>(rowLength > 0 ? rowLength : width) * srcBytesPerPixel;
 	igfx::BufferDesc stagingDesc;
-	stagingDesc.size = static_cast<unsigned long>(width) * height * storedBytesPerPixel();
+	stagingDesc.size = compressed ? igfx::levelDataSize(desc_.format, width, height) : static_cast<unsigned long>(width) * height * dstBytesPerPixel;
 	VkRhiBuffer staging(device_, stagingDesc);
 	if (staging.isValid() == false)
 		return;
 
-	const unsigned char *src = static_cast<const unsigned char *>(data);
-	if (desc_.format == igfx::Format::RGB8)
+	// Tightly packed in the stored format: RGB8 gets an opaque alpha channel, compressed blocks are copied as they are
+	if (compressed)
+		memcpy(staging.mappedData(), data, stagingDesc.size);
+	for (int row = 0; compressed == false && row < height; row++)
 	{
-		uint8_t *dst = staging.mappedData();
-		for (unsigned int i = 0; i < width * height; i++)
+		const unsigned char *src = static_cast<const unsigned char *>(data) + row * srcPitch;
+		uint8_t *dst = staging.mappedData() + static_cast<unsigned long>(row) * width * dstBytesPerPixel;
+		if (desc_.format == igfx::Format::RGB8)
 		{
-			dst[i * 4 + 0] = src[i * 3 + 0];
-			dst[i * 4 + 1] = src[i * 3 + 1];
-			dst[i * 4 + 2] = src[i * 3 + 2];
-			dst[i * 4 + 3] = 255;
+			for (int i = 0; i < width; i++)
+			{
+				dst[i * 4 + 0] = src[i * 3 + 0];
+				dst[i * 4 + 1] = src[i * 3 + 1];
+				dst[i * 4 + 2] = src[i * 3 + 2];
+				dst[i * 4 + 3] = 255;
+			}
 		}
+		else
+			memcpy(dst, src, static_cast<unsigned long>(width) * dstBytesPerPixel);
 	}
-	else
-		memcpy(staging.mappedData(), src, stagingDesc.size);
 	staging.flush(0, stagingDesc.size);
 
 	device_.immediateSubmit([&](VkCommandBuffer commandBuffer) {
 		transitionLevel(commandBuffer, mipLevel, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		VkBufferImageCopy region = {};
 		region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, 0, 1 };
-		region.imageExtent = { width, height, 1 };
+		region.imageOffset = { x, y, 0 };
+		region.imageExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1 };
 		vkCmdCopyBufferToImage(commandBuffer, staging.handle(), image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		transitionLevel(commandBuffer, mipLevel, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	});
@@ -261,7 +294,7 @@ bool VkRhiTexture::download(unsigned int mipLevel, void *data)
 	const unsigned int width = levelWidth(mipLevel);
 	const unsigned int height = levelHeight(mipLevel);
 	igfx::BufferDesc stagingDesc;
-	stagingDesc.size = static_cast<unsigned long>(width) * height * storedBytesPerPixel();
+	stagingDesc.size = igfx::isCompressed(desc_.format) ? igfx::levelDataSize(desc_.format, width, height) : static_cast<unsigned long>(width) * height * storedBytesPerPixel();
 	VkRhiBuffer staging(device_, stagingDesc);
 	if (staging.isValid() == false)
 		return false;

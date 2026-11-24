@@ -241,8 +241,9 @@ void ImGuiDrawing::updateTexture(ImTextureData *tex)
 		}
 		else if (tex->Status == ImTextureStatus_WantUpdates)
 		{
-			// ponytail: re-uploads the whole atlas from ImGui's copy; upload `tex->Updates` regions when atlas growth shows in profiles
-			reinterpret_cast<igfx::ITexture *>(tex->TexID)->upload(0, tex->GetPixels());
+			igfx::ITexture *texture = reinterpret_cast<igfx::ITexture *>(tex->TexID);
+			for (const ImTextureRect &r : tex->Updates)
+				texture->uploadRegion(0, r.x, r.y, r.w, r.h, tex->GetPixelsAt(r.x, r.y), tex->Width);
 			tex->SetStatus(ImTextureStatus_OK);
 		}
 		else if (tex->Status == ImTextureStatus_WantDestroy && tex->UnusedFrames > 0)

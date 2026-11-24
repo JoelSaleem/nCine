@@ -7,11 +7,14 @@
 namespace ncine {
 namespace igfx {
 
-/// Where a render pass draws: the window back buffer, or a render target texture
+/// Where a render pass draws: the window back buffer, or render target textures (multiple render targets)
 struct RenderPassDesc
 {
-	/// `nullptr` targets the swapchain image of the current frame
-	ITexture *colorTarget = nullptr;
+	static const unsigned int MaxColorTargets = 4;
+	/// A null first target means the swapchain image of the current frame, target `i` is fragment output location `i`
+	ITexture *colorTargets[MaxColorTargets] = {};
+	/// Without one depth testing does nothing, as with an OpenGL framebuffer that has no depth buffer
+	bool depthAttachment = true;
 	ClearValues clear;
 };
 
@@ -57,6 +60,8 @@ struct Limits
 	int maxUniformBlockSize = 16384;
 	/// Frames the CPU may record ahead of the GPU; per-frame dynamic data needs this many copies
 	unsigned int framesInFlight = 1;
+	/// BC1-3 (S3TC/DXT) textures can be created
+	bool textureCompressionBC = false;
 };
 
 /// Creates resources and runs frames. One device exists per window.

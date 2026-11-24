@@ -40,30 +40,50 @@ namespace {
 		}
 	}
 
-	/// Bytes a loose uniform takes in the std140 default block (matrices have vec4 columns)
-	unsigned int std140Size(igfx::UniformType type)
+	/// Columns and rows of a uniform type, scalars and vectors have one column (samplers store their unit as an int)
+	void uniformShape(igfx::UniformType type, unsigned int &columns, unsigned int &rows)
 	{
+		columns = 1;
 		switch (type)
 		{
 			case igfx::UniformType::FLOAT:
-			case igfx::UniformType::SAMPLER_2D: // its texture unit, stored after the default block
 			case igfx::UniformType::INT:
 			case igfx::UniformType::UINT:
-			case igfx::UniformType::BOOL: return 4;
+			case igfx::UniformType::BOOL:
+			case igfx::UniformType::SAMPLER_2D: rows = 1; break;
 			case igfx::UniformType::FLOAT_VEC2:
 			case igfx::UniformType::INT_VEC2:
-			case igfx::UniformType::UINT_VEC2: return 8;
+			case igfx::UniformType::UINT_VEC2: rows = 2; break;
 			case igfx::UniformType::FLOAT_VEC3:
 			case igfx::UniformType::INT_VEC3:
-			case igfx::UniformType::UINT_VEC3: return 12;
+			case igfx::UniformType::UINT_VEC3: rows = 3; break;
 			case igfx::UniformType::FLOAT_VEC4:
 			case igfx::UniformType::INT_VEC4:
-			case igfx::UniformType::UINT_VEC4: return 16;
-			case igfx::UniformType::FLOAT_MAT2: return 32;
-			case igfx::UniformType::FLOAT_MAT3: return 48;
-			case igfx::UniformType::FLOAT_MAT4: return 64;
-			default: return 0;
+			case igfx::UniformType::UINT_VEC4: rows = 4; break;
+			case igfx::UniformType::FLOAT_MAT2: columns = rows = 2; break;
+			case igfx::UniformType::FLOAT_MAT3: columns = rows = 3; break;
+			case igfx::UniformType::FLOAT_MAT4: columns = rows = 4; break;
+			default: columns = rows = 0; break;
 		}
+	}
+
+	/// Copies packed values (as `glUniform*v()` takes them) into the std140 layout: matrix columns and
+	/// array elements start on 16 bytes. Returns false if the std140 copy would not fit in `dstSize` bytes.
+	bool copyToStd140(uint8_t *dst, int dstSize, const uint8_t *src, igfx::UniformType type, int arraySize)
+	{
+		unsigned int columns = 0, rows = 0;
+		uniformShape(type, columns, rows);
+		if (columns == 0)
+			return true; // a type the renderer cannot set, nothing to copy
+		const unsigned int numElements = (arraySize > 1) ? static_cast<unsigned int>(arraySize) : 1;
+		const unsigned int columnBytes = rows * 4;
+		const bool padded = (columns > 1 || numElements > 1);
+		const unsigned int columnStride = padded ? 16 : columnBytes;
+		if (static_cast<int>(numElements * columns * columnStride - (columnStride - columnBytes)) > dstSize)
+			return false;
+		for (unsigned int i = 0; i < numElements * columns; i++)
+			memcpy(dst + i * columnStride, src + i * columnBytes, columnBytes);
+		return true;
 	}
 
 	/// Block members can be reported as `Block.member`, the renderer looks them up by member name
@@ -341,8 +361,6 @@ VkRhiShaderProgram::VkRhiShaderProgram(VkDevice device, const char *vertexSource
 	status_ = Status::LINKED;
 }
 
-// ponytail: copies the std140 size of each uniform, matching the renderer's packed values for scalars, vectors
-// and mat4, which are all the default shaders use; mat2/mat3 and arrays need column/element padding
 void VkRhiShaderProgram::writeLooseUniforms(const uint8_t *data, uint32_t writeMask)
 {
 	if (looseStorage_ == nullptr || data == nullptr)
@@ -352,9 +370,9 @@ void VkRhiShaderProgram::writeLooseUniforms(const uint8_t *data, uint32_t writeM
 		if (((writeMask >> i) & 1u) == 0)
 			continue;
 		const igfx::UniformInfo &uniform = uniforms_[i];
-		const unsigned int size = std140Size(uniform.type);
-		if (size > 0 && uniform.offset + static_cast<int>(size) <= looseStorageSize_)
-			memcpy(looseStorage_.get() + uniform.offset, data + uniform.offset, size);
+		// The renderer stores each value packed at its std140 offset, the std140 layout is never smaller
+		if (copyToStd140(looseStorage_.get() + uniform.offset, looseStorageSize_ - uniform.offset, data + uniform.offset, uniform.type, uniform.arraySize) == false)
+			LOGW_X("Loose uniform \"%s\" cannot be copied to the default block", uniform.name.data());
 	}
 }
 

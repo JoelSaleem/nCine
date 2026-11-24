@@ -280,23 +280,20 @@ bool Viewport::removeAllTextures()
 	if (type_ == Type::SCREEN)
 		return false;
 
-	if (fbo_ != nullptr)
+	// Vulkan has no framebuffer object, but its textures are the render pass targets and must go too
+	for (unsigned int i = 0; i < MaxNumTextures; i++)
 	{
-		for (unsigned int i = 0; i < MaxNumTextures; i++)
-		{
-			if (textures_[i] != nullptr)
-			{
-				fbo_->detachTexture(GL_COLOR_ATTACHMENT0 + i);
-				textures_[i] = nullptr;
-			}
-		}
-		numColorAttachments_ = 0;
+		if (textures_[i] != nullptr && fbo_ != nullptr)
+			fbo_->detachTexture(GL_COLOR_ATTACHMENT0 + i);
+		textures_[i] = nullptr;
+	}
+	numColorAttachments_ = 0;
 
-		if (depthStencilFormat_ != DepthStencilFormat::NONE)
-		{
+	if (depthStencilFormat_ != DepthStencilFormat::NONE)
+	{
+		if (fbo_ != nullptr)
 			fbo_->detachRenderbuffer(depthStencilFormatToGLAttachment(depthStencilFormat_));
-			depthStencilFormat_ = DepthStencilFormat::NONE;
-		}
+		depthStencilFormat_ = DepthStencilFormat::NONE;
 	}
 
 	type_ = Type::NO_TEXTURE;
@@ -571,7 +568,11 @@ void Viewport::draw(unsigned int nextIndex)
 			lastFrameCleared_ = numFrames;
 		}
 		if (type_ == Type::WITH_TEXTURE)
-			passDesc.colorTarget = textures_[0]->rhiTexture_.get();
+		{
+			passDesc.depthAttachment = (depthStencilFormat_ != DepthStencilFormat::NONE);
+			for (unsigned int i = 0; i < MaxNumTextures && i < igfx::RenderPassDesc::MaxColorTargets; i++)
+				passDesc.colorTargets[i] = (textures_[i] != nullptr) ? textures_[i]->rhiTexture_.get() : nullptr;
+		}
 		RenderResources::rhiCommandList().beginRenderPass(passDesc);
 	}
 	if (type_ == Type::WITH_TEXTURE && isRenderPass == false)

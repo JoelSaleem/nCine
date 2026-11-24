@@ -58,7 +58,7 @@ class VkRhiBuffer : public igfx::IBuffer
 
 /// GLSL compiled to SPIR-V by glslang with relaxed Vulkan rules, so OpenGL-style shaders work unchanged:
 /// loose uniforms become members of a default uniform block and `gl_VertexID` maps to `gl_VertexIndex`
-class VkRhiShaderProgram : public igfx::IShaderProgram
+class DLL_PUBLIC VkRhiShaderProgram : public igfx::IShaderProgram // exported for `vktest_smoke`
 {
   public:
 	VkRhiShaderProgram(VkDevice device, const char *vertexSource, const char *fragmentSource, const char *name);
@@ -110,7 +110,8 @@ class VkRhiPipeline : public igfx::IPipeline
 	inline bool isValid() const { return layout_ != VK_NULL_HANDLE && program_ != nullptr; }
 	const igfx::PipelineDesc &desc() const override { return desc_; }
 	/// The pipeline for the attachment formats of the current render pass, created on first use
-	VkPipeline pipelineFor(VkFormat colorFormat, VkFormat depthFormat, bool flippedViewport);
+	/// A pipeline for the formats of the current pass, `VK_FORMAT_UNDEFINED` for an unused color location
+	VkPipeline pipelineFor(const VkFormat *colorFormats, unsigned int numColors, VkFormat depthFormat, bool flippedViewport);
 
   private:
 	VkRhiDevice &device_;
@@ -120,7 +121,8 @@ class VkRhiPipeline : public igfx::IPipeline
 	VkPipelineLayout layout_ = VK_NULL_HANDLE;
 	struct Variant
 	{
-		VkFormat colorFormat;
+		VkFormat colorFormats[igfx::RenderPassDesc::MaxColorTargets];
+		unsigned int numColors;
 		VkFormat depthFormat;
 		bool flippedViewport;
 		VkPipeline pipeline;
@@ -152,6 +154,7 @@ class VkRhiTexture : public igfx::ITexture
 
 	const igfx::TextureDesc &desc() const override { return desc_; }
 	void upload(unsigned int mipLevel, const void *data) override;
+	void uploadRegion(unsigned int mipLevel, int x, int y, int width, int height, const void *data, int rowLength) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
 	bool download(unsigned int mipLevel, void *data) override;
 	bool reallocate(const igfx::TextureDesc &desc) override;
@@ -228,13 +231,16 @@ class VkRhiCommandList : public igfx::ICommandList
 	VkRhiPipeline *pipeline_ = nullptr;
 	/// The attachments of the current render pass: the swapchain image or a render target texture
 	VkExtent2D passExtent_ = { 0, 0 };
-	VkFormat passColorFormat_ = VK_FORMAT_UNDEFINED;
+	VkFormat passColorFormats_[igfx::RenderPassDesc::MaxColorTargets] = {};
+	unsigned int numPassColors_ = 0;
 	VkFormat passDepthFormat_ = VK_FORMAT_UNDEFINED;
-	VkRhiTexture *passTarget_ = nullptr;
+	/// A null first target is the swapchain
+	VkRhiTexture *passTargets_[igfx::RenderPassDesc::MaxColorTargets] = {};
 	/// Vulkan render passes cannot nest, a pass begun inside another suspends it until it ends
 	struct SuspendedPass
 	{
-		VkRhiTexture *target;
+		VkRhiTexture *targets[igfx::RenderPassDesc::MaxColorTargets];
+		bool depthAttachment;
 		Recti viewport;
 		Recti scissor;
 	};
@@ -244,7 +250,7 @@ class VkRhiCommandList : public igfx::ICommandList
 
 	/// Pushes the descriptors of the bound pipeline: loose uniforms, uniform blocks and textures
 	void pushDescriptors();
-	void beginTexturePass(VkRhiTexture &target, const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth);
+	void beginTexturePass(const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth);
 
 	friend class VkRhiDevice;
 };

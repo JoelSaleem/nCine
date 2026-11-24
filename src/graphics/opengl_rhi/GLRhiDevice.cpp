@@ -40,6 +40,12 @@ namespace {
 			case igfx::Format::BGRA8: return { GL_RGBA8, GL_BGRA, GL_UNSIGNED_BYTE };
 			case igfx::Format::D24S8: return { GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8 };
 			case igfx::Format::D32F: return { GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT };
+			case igfx::Format::BC1_RGB:
+			case igfx::Format::BC1_RGBA:
+			case igfx::Format::BC2:
+			case igfx::Format::BC3:
+				// ponytail: `Texture` loads compressed data through `GLTexture` directly on OpenGL, add glCompressedTexImage2D() if igfx needs it
+				FATAL_MSG("Compressed igfx textures are only implemented on Vulkan");
 			case igfx::Format::UNDEFINED: break;
 		}
 		return { GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE };
@@ -187,6 +193,24 @@ void GLTexture::upload(unsigned int mipLevel, const void *data)
 	glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousAlignment);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	texImage2D(static_cast<GLint>(mipLevel), glFormat.internalFormat, width, height, glFormat.format, glFormat.type, data);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, previousAlignment);
+}
+
+void GLTexture::uploadRegion(unsigned int mipLevel, int x, int y, int width, int height, const void *data, int rowLength)
+{
+	const GLFormat glFormat = formatToGL(rhiDesc_.format);
+	GLint previousAlignment = 4;
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousAlignment);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+#ifdef GL_UNPACK_ROW_LENGTH // not on WebGL/ES
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, rowLength);
+#else
+	FATAL_ASSERT_MSG(rowLength == 0 || rowLength == width, "Row lengths need GL_UNPACK_ROW_LENGTH");
+#endif
+	texSubImage2D(static_cast<GLint>(mipLevel), x, y, width, height, glFormat.format, glFormat.type, data);
+#ifdef GL_UNPACK_ROW_LENGTH
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#endif
 	glPixelStorei(GL_UNPACK_ALIGNMENT, previousAlignment);
 }
 
@@ -451,7 +475,7 @@ void GLShaderProgram::buildReflection() const
 void GLRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 {
 	// ponytail: only the default framebuffer, render target textures arrive with the render-to-texture slice
-	ASSERT(desc.colorTarget == nullptr);
+	ASSERT(desc.colorTargets[0] == nullptr);
 
 	GLbitfield mask = 0;
 	if (desc.clear.flags & igfx::CLEAR_COLOR)
@@ -593,7 +617,7 @@ void GLRhiCommandList::drawIndexed(unsigned int indexCount, unsigned int instanc
 	ibo_ = nullptr;
 }
 
-/// Same calls `Material::defineVertexFormat()` and `Geometry::bind()` made before each draw
+/// Same calls the legacy path made before each draw (`Material::defineVertexFormat()` and binding the VBO)
 void GLRhiCommandList::setupVertexInput()
 {
 	GLShaderProgram &program = static_cast<GLShaderProgram &>(*pipeline_->program);

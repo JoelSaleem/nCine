@@ -30,6 +30,8 @@ class ITexture
 	virtual const TextureDesc &desc() const = 0;
 	/// Uploads a full mip level, `data` is tightly packed in the texture format
 	virtual void upload(unsigned int mipLevel, const void *data) = 0;
+	/// Uploads a rectangle of a mip level keeping the rest, `data` rows are `rowLength` pixels apart (zero for `width`)
+	virtual void uploadRegion(unsigned int mipLevel, int x, int y, int width, int height, const void *data, int rowLength) = 0;
 	virtual void setSampler(const SamplerDesc &sampler) = 0;
 	/// Reads a full mip level back, tightly packed in the texture format
 	virtual bool download(unsigned int mipLevel, void *data) = 0;

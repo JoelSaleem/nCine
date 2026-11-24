@@ -148,20 +148,26 @@ void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 	if (insideRenderPass_)
 	{
 		FATAL_ASSERT_MSG(suspendedPasses_.size() < suspendedPasses_.capacity(), "Too many nested render passes");
-		suspendedPasses_.pushBack({ passTarget_, viewport_, scissor_ });
+		SuspendedPass suspended;
+		memcpy(suspended.targets, passTargets_, sizeof(passTargets_));
+		suspended.depthAttachment = (passDepthFormat_ != VK_FORMAT_UNDEFINED);
+		suspended.viewport = viewport_;
+		suspended.scissor = scissor_;
+		suspendedPasses_.pushBack(suspended);
 		vkCmdEndRendering(commandBuffer_);
 		insideRenderPass_ = false;
 	}
 	const bool clearColor = (desc.clear.flags & igfx::CLEAR_COLOR);
 	const bool clearDepth = (desc.clear.flags & igfx::CLEAR_DEPTH);
-	if (desc.colorTarget != nullptr)
+	if (desc.colorTargets[0] != nullptr)
 	{
-		beginTexturePass(*const_cast<VkRhiTexture *>(static_cast<const VkRhiTexture *>(desc.colorTarget)), desc, clearColor, clearDepth);
+		beginTexturePass(desc, clearColor, clearDepth);
 		return;
 	}
-	passTarget_ = nullptr;
+	memset(passTargets_, 0, sizeof(passTargets_));
 	passExtent_ = device_.swapchainExtent_;
-	passColorFormat_ = device_.swapchainFormat_;
+	passColorFormats_[0] = device_.swapchainFormat_;
+	numPassColors_ = 1;
 	passDepthFormat_ = device_.depthFormat_;
 
 	VkRhiDevice::SwapchainImage &image = device_.swapchainImages_[device_.imageIndex_];
@@ -207,36 +213,56 @@ void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 	setScissor(Recti(0, 0, 0, 0));
 }
 
-void VkRhiCommandList::beginTexturePass(VkRhiTexture &target, const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth)
+void VkRhiCommandList::beginTexturePass(const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth)
 {
-	if (target.prepareRenderTarget() == false)
+	// Target `i` is color attachment `i`, a gap leaves its fragment output unused; the first one sizes the pass and owns the depth
+	VkRhiTexture &first = *const_cast<VkRhiTexture *>(static_cast<const VkRhiTexture *>(desc.colorTargets[0]));
+	VkRenderingAttachmentInfo colorAttachments[igfx::RenderPassDesc::MaxColorTargets];
+	numPassColors_ = 0;
+	for (unsigned int i = 0; i < igfx::RenderPassDesc::MaxColorTargets; i++)
 	{
-		LOGE("Cannot render into the texture, it has no attachment views");
+		VkRhiTexture *target = const_cast<VkRhiTexture *>(static_cast<const VkRhiTexture *>(desc.colorTargets[i]));
+		if (target != nullptr && (target->prepareRenderTarget() == false || target->desc().width != first.desc().width || target->desc().height != first.desc().height))
+		{
+			LOGE_X("Cannot render into texture %u: it has no attachment view or its size differs from the first one", i);
+			target = nullptr;
+		}
+		passTargets_[i] = target;
+		passColorFormats_[i] = target ? target->format() : VK_FORMAT_UNDEFINED;
+		colorAttachments[i] = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+		if (target == nullptr)
+			continue;
+		numPassColors_ = i + 1;
+
+		if (clearColor)
+			target->layouts_[0] = VK_IMAGE_LAYOUT_UNDEFINED; // its contents are discarded anyway
+		target->transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		colorAttachments[i].imageView = target->attachmentView_;
+		colorAttachments[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachments[i].loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+		colorAttachments[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[i].clearValue.color = { { desc.clear.color.r(), desc.clear.color.g(), desc.clear.color.b(), desc.clear.color.a() } };
+	}
+	if (passTargets_[0] == nullptr)
+	{
+		memset(passTargets_, 0, sizeof(passTargets_));
 		return;
 	}
-	passTarget_ = &target;
-	passExtent_ = { static_cast<uint32_t>(target.desc().width), static_cast<uint32_t>(target.desc().height) };
-	passColorFormat_ = target.format();
-	passDepthFormat_ = device_.depthFormat_;
+	passExtent_ = { static_cast<uint32_t>(first.desc().width), static_cast<uint32_t>(first.desc().height) };
+	passDepthFormat_ = desc.depthAttachment ? device_.depthFormat_ : VK_FORMAT_UNDEFINED;
 
-	if (clearColor)
-		target.layouts_[0] = VK_IMAGE_LAYOUT_UNDEFINED; // its contents are discarded anyway
-	target.transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	const VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil(passDepthFormat_) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
-	const VkPipelineStageFlags2 depthStages = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-	device_.transitionImage(target.depthImage_, depthAspect, clearDepth ? VK_IMAGE_LAYOUT_UNDEFINED : target.depthLayout_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-	                        depthStages, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, depthStages,
-	                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-	target.depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	if (desc.depthAttachment)
+	{
+		const VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil(passDepthFormat_) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+		const VkPipelineStageFlags2 depthStages = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		device_.transitionImage(first.depthImage_, depthAspect, clearDepth ? VK_IMAGE_LAYOUT_UNDEFINED : first.depthLayout_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		                        depthStages, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, depthStages,
+		                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+		first.depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	}
 
-	VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-	colorAttachment.imageView = target.attachmentView_;
-	colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	colorAttachment.loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	colorAttachment.clearValue.color = { { desc.clear.color.r(), desc.clear.color.g(), desc.clear.color.b(), desc.clear.color.a() } };
 	VkRenderingAttachmentInfo depthAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-	depthAttachment.imageView = target.depthView_;
+	depthAttachment.imageView = first.depthView_;
 	depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	depthAttachment.loadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -245,10 +271,11 @@ void VkRhiCommandList::beginTexturePass(VkRhiTexture &target, const igfx::Render
 	VkRenderingInfo renderingInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
 	renderingInfo.renderArea = { { 0, 0 }, passExtent_ };
 	renderingInfo.layerCount = 1;
-	renderingInfo.colorAttachmentCount = 1;
-	renderingInfo.pColorAttachments = &colorAttachment;
-	renderingInfo.pDepthAttachment = &depthAttachment;
-	if (hasStencil(passDepthFormat_))
+	renderingInfo.colorAttachmentCount = numPassColors_;
+	renderingInfo.pColorAttachments = colorAttachments;
+	if (desc.depthAttachment)
+		renderingInfo.pDepthAttachment = &depthAttachment;
+	if (desc.depthAttachment && hasStencil(passDepthFormat_))
 		renderingInfo.pStencilAttachment = &depthAttachment;
 	vkCmdBeginRendering(commandBuffer_, &renderingInfo);
 	insideRenderPass_ = true;
@@ -263,10 +290,13 @@ void VkRhiCommandList::endRenderPass()
 		return;
 	vkCmdEndRendering(commandBuffer_);
 	insideRenderPass_ = false;
-	// Later draws sample what was rendered into a texture
-	if (passTarget_)
-		passTarget_->transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	passTarget_ = nullptr;
+	// Later draws sample what was rendered into the textures
+	for (VkRhiTexture *target : passTargets_)
+	{
+		if (target != nullptr)
+			target->transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
+	memset(passTargets_, 0, sizeof(passTargets_));
 
 	if (suspendedPasses_.isEmpty() == false)
 	{
@@ -274,7 +304,9 @@ void VkRhiCommandList::endRenderPass()
 		const SuspendedPass suspended = suspendedPasses_.back();
 		suspendedPasses_.popBack();
 		igfx::RenderPassDesc resume;
-		resume.colorTarget = suspended.target;
+		for (unsigned int i = 0; i < igfx::RenderPassDesc::MaxColorTargets; i++)
+			resume.colorTargets[i] = suspended.targets[i];
+		resume.depthAttachment = suspended.depthAttachment;
 		resume.clear.flags = igfx::CLEAR_NONE;
 		beginRenderPass(resume);
 		setViewport(suspended.viewport);
@@ -291,7 +323,7 @@ void VkRhiCommandList::setViewport(const Recti &rect)
 	VkViewport viewport;
 	viewport.x = static_cast<float>(rect.x);
 	viewport.width = static_cast<float>(rect.w);
-	if (passTarget_ == nullptr)
+	if (passTargets_[0] == nullptr)
 	{
 		// A negative height keeps OpenGL's bottom-left origin on screen (core since Vulkan 1.1)
 		viewport.y = extentHeight - static_cast<float>(rect.y);
@@ -319,7 +351,7 @@ void VkRhiCommandList::setScissor(const Recti &rect)
 		// Clamped to the attachment like glScissor(), Vulkan rejects negative offsets
 		const int width = static_cast<int>(passExtent_.width);
 		const int height = static_cast<int>(passExtent_.height);
-		const int top = (passTarget_ == nullptr) ? height - rect.y - rect.h : rect.y;
+		const int top = (passTargets_[0] == nullptr) ? height - rect.y - rect.h : rect.y;
 		const int x0 = nctl::max(rect.x, 0);
 		const int y0 = nctl::max(top, 0);
 		const int x1 = nctl::min(rect.x + rect.w, width);
@@ -338,7 +370,7 @@ void VkRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)
 		pipeline_ = nullptr; // a skipped frame, the pass formats are unknown
 		return;
 	}
-	const VkPipeline vkPipeline = pipeline_->pipelineFor(passColorFormat_, passDepthFormat_, passTarget_ == nullptr);
+	const VkPipeline vkPipeline = pipeline_->pipelineFor(passColorFormats_, numPassColors_, passDepthFormat_, passTargets_[0] == nullptr);
 	if (vkPipeline != VK_NULL_HANDLE)
 		vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
 	else
@@ -708,6 +740,11 @@ bool VkRhiDevice::createDevice()
 		return false;
 	}
 
+	// Optional: DDS files are often BC compressed
+	VkPhysicalDeviceFeatures features = {};
+	features.textureCompressionBC = supported.features.textureCompressionBC;
+	limits_.textureCompressionBC = (features.textureCompressionBC == VK_TRUE);
+
 	VkPhysicalDeviceDepthClipControlFeaturesEXT clipControl = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT };
 	clipControl.depthClipControl = VK_TRUE;
 	VkPhysicalDeviceVulkan13Features features13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
@@ -723,6 +760,7 @@ bool VkRhiDevice::createDevice()
 
 	VkDeviceCreateInfo deviceInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 	deviceInfo.pNext = &features13;
+	deviceInfo.pEnabledFeatures = &features;
 	deviceInfo.queueCreateInfoCount = 1;
 	deviceInfo.pQueueCreateInfos = &queueInfo;
 	deviceInfo.enabledExtensionCount = NumRequiredDeviceExtensions;

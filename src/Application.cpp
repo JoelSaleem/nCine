@@ -83,7 +83,8 @@ namespace {
 			values_[GLIntValues::MAX_FRAGMENT_UNIFORM_BLOCKS] = 8;
 			values_[GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT] = limits.uniformBufferOffsetAlignment;
 			values_[GLIntValues::MAX_VERTEX_ATTRIB_STRIDE] = 2048; // the minimum Vulkan guarantees
-			values_[GLIntValues::MAX_COLOR_ATTACHMENTS] = 1;
+			values_[GLIntValues::MAX_COLOR_ATTACHMENTS] = igfx::RenderPassDesc::MaxColorTargets;
+			hasS3tc_ = limits.textureCompressionBC;
 			infoStrings_.vendor = reinterpret_cast<const unsigned char *>("nCine");
 			infoStrings_.renderer = reinterpret_cast<const unsigned char *>("Vulkan");
 			infoStrings_.glVersion = reinterpret_cast<const unsigned char *>("");
@@ -93,10 +94,11 @@ namespace {
 		const GlInfoStrings &glInfoStrings() const override { return infoStrings_; }
 		int value(GLIntValues::Enum valueName) const override { return (valueName < GLIntValues::COUNT) ? values_[valueName] : 0; }
 		int arrayValue(GLArrayIntValues::Enum, unsigned int) const override { return 0; }
-		bool hasExtension(GLExtensions::Enum) const override { return false; }
+		bool hasExtension(GLExtensions::Enum extensionName) const override { return extensionName == GLExtensions::EXT_TEXTURE_COMPRESSION_S3TC && hasS3tc_; }
 
 	  private:
 		int values_[GLIntValues::COUNT];
+		bool hasS3tc_ = false;
 		GlInfoStrings infoStrings_;
 	};
 	static FrameCapture::Config captureConfig;

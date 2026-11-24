@@ -75,6 +75,12 @@ igfx::Format rhiFormatFromGL(GLenum internalFormat)
 		case GL_RG8: return igfx::Format::RG8;
 		case GL_RGB8: return igfx::Format::RGB8;
 		case GL_RGBA8: return igfx::Format::RGBA8;
+#if !defined(WITH_OPENGLES) && !defined(__EMSCRIPTEN__)
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: return igfx::Format::BC1_RGB;
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: return igfx::Format::BC1_RGBA;
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT: return igfx::Format::BC2;
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT: return igfx::Format::BC3;
+#endif
 		default: return igfx::Format::UNDEFINED;
 	}
 }
@@ -321,15 +327,7 @@ bool Texture::loadFromTexels(const unsigned char *bufferPtr, unsigned int level,
 
 	if (rhiTexture_)
 	{
-		// ponytail: whole mip levels only, sub-region updates need an `ITexture` region upload
-		const unsigned int levelWidth = (width_ >> level) > 0 ? (width_ >> level) : 1;
-		const unsigned int levelHeight = (height_ >> level) > 0 ? (height_ >> level) : 1;
-		if (x != 0 || y != 0 || width != levelWidth || height != levelHeight)
-		{
-			LOGE_X("Texture \"%s\": only whole mip levels can be updated on Vulkan", name());
-			return false;
-		}
-		rhiTexture_->upload(level, data);
+		rhiTexture_->uploadRegion(level, static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height), data, 0);
 		return true;
 	}
 
@@ -489,7 +487,6 @@ void Texture::initialize(const ITextureLoader &texLoader)
 	if (usingVulkan())
 	{
 		const TextureFormat &texFormat = texLoader.texFormat();
-		FATAL_ASSERT_MSG(texFormat.isCompressed() == false, "Compressed textures are not supported on Vulkan yet");
 		const int maxTextureSize = RenderResources::rhiDevice().limits().maxTextureSize;
 		FATAL_ASSERT_MSG_X(texLoader.width() <= maxTextureSize && texLoader.height() <= maxTextureSize, "Texture size %dx%d is bigger than device maximum %d",
 		                   texLoader.width(), texLoader.height(), maxTextureSize);
@@ -497,7 +494,7 @@ void Texture::initialize(const ITextureLoader &texLoader)
 		GLenum internalFormat = texFormat.internalFormat();
 		GLenum format = texFormat.format();
 		unsigned long dataSize = texLoader.dataSize();
-		if (format == GL_RGB && isChromaKeyEnabled_)
+		if (format == GL_RGB && isChromaKeyEnabled_ && texFormat.isCompressed() == false)
 		{
 			internalFormat = GL_RGBA8;
 			format = GL_RGBA;
@@ -516,6 +513,7 @@ void Texture::initialize(const ITextureLoader &texLoader)
 		desc.mipLevels = static_cast<unsigned int>(texLoader.mipMapCount());
 		desc.sampler = rhiSamplerDesc(minFiltering_, magFiltering_, wrapMode_);
 		FATAL_ASSERT_MSG_X(desc.format != igfx::Format::UNDEFINED, "Texture format 0x%x is not supported on Vulkan yet", internalFormat);
+		FATAL_ASSERT_MSG(igfx::isCompressed(desc.format) == false || RenderResources::rhiDevice().limits().textureCompressionBC, "The Vulkan device cannot sample BC compressed textures");
 		if (rhiTexture_ == nullptr)
 			rhiTexture_ = RenderResources::rhiDevice().createTexture(desc);
 		else if (rhiTexture_->desc().width != desc.width || rhiTexture_->desc().height != desc.height ||
@@ -531,7 +529,7 @@ void Texture::initialize(const ITextureLoader &texLoader)
 		width_ = texLoader.width();
 		height_ = texLoader.height();
 		mipMapLevels_ = texLoader.mipMapCount();
-		isCompressed_ = false;
+		isCompressed_ = texFormat.isCompressed();
 		format_ = formatToNc(format);
 		dataSize_ = dataSize;
 		return;
@@ -628,7 +626,7 @@ void Texture::load(const ITextureLoader &texLoader)
 		for (int mipIdx = 0; mipIdx < texLoader.mipMapCount(); mipIdx++)
 		{
 			const unsigned char *data = texLoader.pixels(mipIdx);
-			if (texFormat.format() == GL_RGB && isChromaKeyEnabled_)
+			if (texFormat.format() == GL_RGB && isChromaKeyEnabled_ && texFormat.isCompressed() == false)
 			{
 				const unsigned int numPixels = levelWidth * levelHeight;
 				chromaPixels = nctl::makeUnique<uint32_t[]>(numPixels);

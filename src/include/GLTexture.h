@@ -50,6 +50,7 @@ class GLTexture
 	/// Valid for textures created by `GLRhiDevice`, legacy ones are only used as binding handles
 	const igfx::TextureDesc &desc() const override { return rhiDesc_; }
 	void upload(unsigned int mipLevel, const void *data) override;
+	void uploadRegion(unsigned int mipLevel, int x, int y, int width, int height, const void *data, int rowLength) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
 	bool download(unsigned int mipLevel, void *data) override;
 	bool reallocate(const igfx::TextureDesc &desc) override;
