@@ -86,7 +86,6 @@ GLUniformCache *GLShaderUniforms::uniform(const char *name)
 	return const_cast<GLUniformCache *>(static_cast<const GLShaderUniforms &>(*this).uniform(name));
 }
 
-#ifdef WITH_RHI
 void GLShaderUniforms::setUniformsDataPointer(GLubyte *dataPointer, const nctl::Array<igfx::UniformInfo> &layout)
 {
 	ASSERT(dataPointer);
@@ -106,7 +105,6 @@ void GLShaderUniforms::setUniformsDataPointer(GLubyte *dataPointer, const nctl::
 		}
 	}
 }
-#endif
 
 void GLShaderUniforms::commitUniforms()
 {

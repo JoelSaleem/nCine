@@ -38,10 +38,8 @@ GLShaderProgram::GLShaderProgram(QueryPhase queryPhase)
       uniformsSize_(0), uniformBlocksSize_(0), uniforms_(UniformsInitialSize),
       uniformBlocks_(UniformBlocksInitialSize), attributes_(AttributesInitialSize)
 {
-#ifdef WITH_RHI
 	if (igfx::isVulkanSelected())
 		return; // no OpenGL object, `RenderResources::compileShader()` describes a Vulkan program instead
-#endif
 	glHandle_ = glCreateProgram();
 
 	if (RenderResources::binaryShaderCache().isAvailable())
@@ -77,12 +75,7 @@ GLShaderProgram::~GLShaderProgram()
 		glDeleteProgram(glHandle_);
 	}
 
-#ifdef WITH_SCENEGRAPH
-	RenderResources::removeCameraUniformData(this);
-#endif
-#ifdef WITH_RHI
 	RenderResources::forgetProgram(rhiProgram());
-#endif
 }
 
 ///////////////////////////////////////////////////////////
@@ -138,10 +131,8 @@ bool GLShaderProgram::isLinked() const
 
 unsigned int GLShaderProgram::retrieveInfoLogLength() const
 {
-#ifdef WITH_RHI
 	if (rhiProgram_)
 		return rhiProgram_->infoLog().length();
-#endif
 	GLint length = 0;
 	glGetProgramiv(glHandle_, GL_INFO_LOG_LENGTH, &length);
 
@@ -150,13 +141,11 @@ unsigned int GLShaderProgram::retrieveInfoLogLength() const
 
 void GLShaderProgram::retrieveInfoLog(nctl::String &infoLog) const
 {
-#ifdef WITH_RHI
 	if (rhiProgram_)
 	{
 		infoLog = rhiProgram_->infoLog();
 		return;
 	}
-#endif
 	GLint length = 0;
 	glGetProgramiv(glHandle_, GL_INFO_LOG_LENGTH, &length);
 
@@ -344,9 +333,7 @@ void GLShaderProgram::reset(QueryPhase queryPhase)
 		uniforms_.clear();
 		uniformBlocks_.clear();
 		attributes_.clear();
-#ifdef WITH_RHI
 		invalidateReflection();
-#endif
 
 		attributeLocations_.clear();
 		vertexFormat_.reset();
@@ -361,7 +348,6 @@ void GLShaderProgram::reset(QueryPhase queryPhase)
 		glDeleteProgram(glHandle_);
 
 #ifdef WITH_SCENEGRAPH
-		RenderResources::removeCameraUniformData(this);
 		// In case there is a batched version of this shader
 		RenderResources::unregisterBatchedShader(this);
 #endif
@@ -490,9 +476,7 @@ bool GLShaderProgram::checkLinking()
 
 void GLShaderProgram::performIntrospection()
 {
-#ifdef WITH_RHI
 	invalidateReflection();
-#endif
 	if (introspection_ != Introspection::DISABLED && status_ != Status::LINKED_WITH_INTROSPECTION)
 	{
 		const GLUniformBlock::DiscoverUniforms discover = (introspection_ == Introspection::NO_UNIFORMS_IN_BLOCKS)

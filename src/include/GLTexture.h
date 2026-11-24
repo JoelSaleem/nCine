@@ -2,17 +2,13 @@
 #define CLASS_NCINE_GLTEXTURE
 
 #include "GLHashMap.h"
-#ifdef WITH_RHI
-	#include "igfx/Resources.h"
-#endif
+#include "igfx/Resources.h"
 
 namespace ncine {
 
 /// A class to handle OpenGL 2D textures
 class GLTexture
-#ifdef WITH_RHI
     : public igfx::ITexture // the OpenGL backend of the render hardware interface, see `GLRhiDevice.h`
-#endif
 {
   public:
 	static const unsigned int MaxTextureUnits = 4;
@@ -51,20 +47,16 @@ class GLTexture
 
 	void setObjectLabel(const char *label);
 
-#ifdef WITH_RHI
 	/// Valid for textures created by `GLRhiDevice`, legacy ones are only used as binding handles
 	const igfx::TextureDesc &desc() const override { return rhiDesc_; }
 	void upload(unsigned int mipLevel, const void *data) override;
 	void setSampler(const igfx::SamplerDesc &sampler) override;
 	bool download(unsigned int mipLevel, void *data) override;
 	bool reallocate(const igfx::TextureDesc &desc) override;
-#endif
 
   private:
-#ifdef WITH_RHI
 	igfx::TextureDesc rhiDesc_;
 	friend class GLRhiDevice;
-#endif
 	static class GLHashMap<GLTextureMappingFunc::Size, GLTextureMappingFunc> boundTextures_[MaxTextureUnits];
 	static unsigned int boundUnit_;
 

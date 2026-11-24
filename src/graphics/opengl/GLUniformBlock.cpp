@@ -90,7 +90,6 @@ GLUniformBlock::GLUniformBlock(GLuint program, GLuint index)
 // PUBLIC FUNCTIONS
 ///////////////////////////////////////////////////////////
 
-#ifdef WITH_RHI
 GLUniformBlock::GLUniformBlock(const igfx::UniformBlockInfo &info, GLuint index, const nctl::Array<igfx::UniformInfo> &uniforms, int offsetAlignment)
     : program_(0), index_(index), size_(info.size), alignAmount_(0), bindingIndex_(info.binding)
 {
@@ -108,7 +107,6 @@ GLUniformBlock::GLUniformBlock(const igfx::UniformBlockInfo &info, GLuint index,
 	}
 }
 
-#endif
 void GLUniformBlock::setBlockBinding(GLuint blockBinding)
 {
 	ASSERT(program_ != 0);

@@ -34,7 +34,7 @@ Host: devvm (CentOS Stream 9), 192 cores, no GPU (`lspci` shows none, no `/dev/d
 
 ## RHI and Vulkan builds
 
-- GL through igfx: same configure plus `-DNCINE_RHI=ON` (`build-glrhi`, `build-sdl2-glrhi`), then `./tools/verify.sh all --backend gl-rhi --build build-glrhi`.
+- GL always renders through igfx (the legacy path is gone, `NCINE_RHI` no longer exists); Vulkan needs `-DNCINE_WITH_VULKAN=ON`.
 - Vulkan: plus `-DNCINE_WITH_VULKAN=ON`: `build-vk` (Debug, asserts + validation) and `build-vk-rel` (Release, for golden checks: `./tools/verify.sh all --backend vulkan --build build-vk-rel`). Goldens are Release captures: Debug builds differ in `apptest_jobsystem` (extra debug-statistics window), so golden-check Release builds only. Smoke test: `./tools/verify.sh vk-smoke --build build-vk` (clear + readback on lavapipe, exits non-zero on any validation message). Needs `vulkan-validation-layers`; VMA 3.5.0 is vendored in `src/graphics/vulkan/vk_mem_alloc.h`.
 
 ## Vulkan comparison

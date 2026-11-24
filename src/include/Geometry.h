@@ -100,8 +100,6 @@ class Geometry
 	bool hasDirtyVertices_;
 	bool hasDirtyIndices_;
 
-	void bind();
-	void draw(GLsizei numInstances);
 	void commitVertices();
 	void commitIndices();
 

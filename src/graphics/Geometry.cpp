@@ -46,9 +46,7 @@ void Geometry::createCustomVbo(unsigned int numFloats, GLenum usage)
 
 	vboUsageFlags_ = usage;
 	vboParams_.object = vbo_.get();
-#ifdef WITH_RHI
 	vboParams_.rhiObject = vbo_.get(); // ponytail: custom buffers are OpenGL only until Vulkan needs them
-#endif
 	vboParams_.size = vbo_->size();
 	vboParams_.offset = 0;
 	vboParams_.mapBase = nullptr;
@@ -124,9 +122,7 @@ void Geometry::createCustomIbo(unsigned int numIndices, GLenum usage)
 
 	iboUsageFlags_ = usage;
 	iboParams_.object = ibo_.get();
-#ifdef WITH_RHI
 	iboParams_.rhiObject = ibo_.get();
-#endif
 	iboParams_.size = ibo_->size();
 	iboParams_.offset = 0;
 	iboParams_.mapBase = nullptr;
@@ -198,44 +194,6 @@ void Geometry::shareIbo(const Geometry *geometry)
 ///////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 ///////////////////////////////////////////////////////////
-
-void Geometry::bind()
-{
-	if (vboParams_.object)
-		vboParams_.object->bind();
-}
-
-void Geometry::draw(GLsizei numInstances)
-{
-	const GLint vboOffset = static_cast<GLint>(vboParams().offset / numElementsPerVertex_ / sizeof(GLfloat)) + firstVertex_;
-
-	void *iboOffsetPtr = nullptr;
-	if (numIndices_ > 0)
-		iboOffsetPtr = reinterpret_cast<void *>(iboParams().offset + firstIndex_ * sizeof(GLushort));
-
-	if (numInstances == 0)
-	{
-		if (numIndices_ > 0)
-#if (defined(WITH_OPENGLES) && !GL_ES_VERSION_3_2) || defined(__EMSCRIPTEN__)
-			glDrawElements(primitiveType_, numIndices_, GL_UNSIGNED_SHORT, iboOffsetPtr);
-#else
-			glDrawElementsBaseVertex(primitiveType_, numIndices_, GL_UNSIGNED_SHORT, iboOffsetPtr, vboOffset);
-#endif
-		else
-			glDrawArrays(primitiveType_, vboOffset, numVertices_);
-	}
-	else if (numInstances > 0)
-	{
-		if (numIndices_ > 0)
-#if (defined(WITH_OPENGLES) && !GL_ES_VERSION_3_2) || defined(__EMSCRIPTEN__)
-			glDrawElementsInstanced(primitiveType_, numIndices_, GL_UNSIGNED_SHORT, iboOffsetPtr, numInstances);
-#else
-			glDrawElementsInstancedBaseVertex(primitiveType_, numIndices_, GL_UNSIGNED_SHORT, iboOffsetPtr, numInstances, vboOffset);
-#endif
-		else
-			glDrawArraysInstanced(primitiveType_, vboOffset, numVertices_, numInstances);
-	}
-}
 
 void Geometry::commitVertices()
 {

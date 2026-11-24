@@ -82,7 +82,6 @@ ImGuiDrawing::ImGuiDrawing(bool withSceneGraph)
 	        ? GLShaderProgram::QueryPhase::DEFERRED
 	        : GLShaderProgram::QueryPhase::IMMEDIATE;
 
-#ifdef WITH_RHI
 	if (igfx::isVulkanSelected())
 	{
 		// Same sources, compiled by the Vulkan device and described by a reflection-backed program
@@ -97,7 +96,6 @@ ImGuiDrawing::ImGuiDrawing(bool withSceneGraph)
 		ImGui::GetStyle().GrabRounding = 3.0f;
 		return;
 	}
-#endif
 	imguiShaderProgram_ = nctl::makeUnique<GLShaderProgram>(queryPhase);
 	imguiShaderProgram_->setSortId(GLShaderProgram::FirstUserSortId - 1); // fixed, after the default programs
 
@@ -192,13 +190,11 @@ void ImGuiDrawing::endFrame()
 	ImGui::EndFrame();
 	ImGui::Render();
 
-#ifdef WITH_RHI
 	if (igfx::isVulkanSelected())
 	{
 		drawRhi();
 		return;
 	}
-#endif
 	draw();
 }
 
@@ -208,7 +204,6 @@ void ImGuiDrawing::endFrame()
 
 void ImGuiDrawing::destroyTexture(ImTextureData *tex)
 {
-#ifdef WITH_RHI
 	if (igfx::isVulkanSelected())
 	{
 		rhiTextures_.remove(reinterpret_cast<igfx::ITexture *>(tex->TexID));
@@ -216,7 +211,6 @@ void ImGuiDrawing::destroyTexture(ImTextureData *tex)
 		tex->SetStatus(ImTextureStatus_Destroyed);
 		return;
 	}
-#endif
 	GLTexture *texturePtr = (GLTexture *)(intptr_t)tex->TexID;
 	textures_.remove(texturePtr);
 
@@ -227,7 +221,6 @@ void ImGuiDrawing::destroyTexture(ImTextureData *tex)
 
 void ImGuiDrawing::updateTexture(ImTextureData *tex)
 {
-#ifdef WITH_RHI
 	if (igfx::isVulkanSelected())
 	{
 		if (tex->Status == ImTextureStatus_WantCreate)
@@ -256,7 +249,6 @@ void ImGuiDrawing::updateTexture(ImTextureData *tex)
 			destroyTexture(tex);
 		return;
 	}
-#endif
 	// Backup GL_UNPACK state that we modify, restore on exit.
 	GLint lastUnpackRowLength = 0; (void)lastUnpackRowLength;
 	GLint lastUnpackAlignment = 0; (void)lastUnpackAlignment;
@@ -468,14 +460,12 @@ void ImGuiDrawing::draw(RenderQueue &renderQueue)
 			currCmd.geometry().setFirstVertex(imCmd->VtxOffset);
 			currCmd.setLayer(theApplication().guiSettings().imguiLayer);
 			currCmd.setVisitOrder(numCmd);
-#ifdef WITH_RHI
 			if (igfx::isVulkanSelected())
 			{
 				currCmd.material().setTexture(static_cast<const GLTexture *>(nullptr));
 				currCmd.material().setRhiTexture(0, reinterpret_cast<igfx::ITexture *>(imCmd->GetTexID()));
 			}
 			else
-#endif
 				currCmd.material().setTexture(reinterpret_cast<GLTexture *>(imCmd->GetTexID()));
 
 			renderQueue.addCommand(&currCmd);
@@ -506,7 +496,6 @@ void ImGuiDrawing::setupAttributes()
 	imguiShaderProgram_->attribute(AttributeNames::Color)->setNormalized(true);
 }
 
-#ifdef WITH_RHI
 void ImGuiDrawing::drawRhi()
 {
 	ImDrawData *drawData = ImGui::GetDrawData();
@@ -581,7 +570,6 @@ void ImGuiDrawing::drawRhi()
 	buffers.flushUnmap();
 	buffers.remap();
 }
-#endif
 
 void ImGuiDrawing::draw()
 {

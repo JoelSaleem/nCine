@@ -415,9 +415,7 @@ RenderCommand *RenderBatcher::collectCommandsWithUniforms(
 	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
 		batchCommand->material().setTextureSortId(i, refCommand->material().textureSortId(i));
-#ifdef WITH_RHI
 		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
-#endif
 	}
 	batchCommand->material().setBlendingEnabled(refCommand->material().isBlendingEnabled());
 	batchCommand->material().setBlendingFactors(refCommand->material().srcBlendingFactor(), refCommand->material().destBlendingFactor());
@@ -581,9 +579,7 @@ RenderCommand *RenderBatcher::collectCommandsWithInstancing(
 	{
 		batchCommand->material().setTexture(i, refCommand->material().texture(i));
 		batchCommand->material().setTextureSortId(i, refCommand->material().textureSortId(i));
-#ifdef WITH_RHI
 		batchCommand->material().setRhiTexture(i, refCommand->material().rhiTexture(i));
-#endif
 	}
 	batchCommand->material().setBlendingEnabled(refCommand->material().isBlendingEnabled());
 	batchCommand->material().setBlendingFactors(refCommand->material().srcBlendingFactor(), refCommand->material().destBlendingFactor());

@@ -4,9 +4,7 @@
 #include "GLBufferObject.h"
 #include <nctl/Array.h>
 #include <nctl/UniquePtr.h>
-#ifdef WITH_RHI
-	#include "igfx/Resources.h"
-#endif
+#include "igfx/Resources.h"
 
 namespace ncine {
 
@@ -42,10 +40,8 @@ class RenderBuffersManager
 		    : object(nullptr), size(0), offset(0), mapBase(nullptr) {}
 
 		GLBufferObject *object;
-#ifdef WITH_RHI
 		/// The buffer as the render hardware interface sees it: `object` on OpenGL, the frame's copy on Vulkan
 		igfx::IBuffer *rhiObject = nullptr;
-#endif
 		unsigned long size;
 		unsigned long offset;
 		GLubyte *mapBase;
@@ -74,12 +70,10 @@ class RenderBuffersManager
 		unsigned long freeSpace;
 		GLubyte *mapBase;
 		nctl::UniquePtr<GLubyte[]> hostBuffer;
-#ifdef WITH_RHI
 		static const unsigned int MaxFramesInFlight = 3;
 		/// Vulkan only: one persistently mapped copy per frame in flight, `object` stays null
 		nctl::UniquePtr<igfx::IBuffer> rhiCopies[MaxFramesInFlight];
 		unsigned int currentCopy = 0;
-#endif
 	};
 
 	nctl::Array<ManagedBuffer> buffers_;
@@ -89,9 +83,7 @@ class RenderBuffersManager
 	void createBuffer(const BufferSpecifications &specs);
 
 	friend class ScreenViewport;
-#ifdef WITH_RHI
 	friend class ImGuiDrawing; // flushes and remaps when drawing without the scenegraph
-#endif
 	friend class RenderStatistics;
 };
 

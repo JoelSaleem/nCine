@@ -10,11 +10,7 @@ namespace ncine {
 namespace {
 	inline bool usingVulkan()
 	{
-#ifdef WITH_RHI
 		return igfx::isVulkanSelected();
-#else
-		return false;
-#endif
 	}
 }
 
@@ -53,7 +49,6 @@ RenderBuffersManager::RenderBuffersManager(bool useBufferMapping, unsigned long 
 	// Clamped between 16 KB and 64 KB
 	int uboMaxSize = gfxCaps.value(IGfxCapabilities::GLIntValues::MAX_UNIFORM_BLOCK_SIZE);
 	int offsetAlignment = gfxCaps.value(IGfxCapabilities::GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT);
-#ifdef WITH_RHI
 	if (usingVulkan())
 	{
 		// Clamped to 64 KB like the OpenGL capability, Vulkan devices often report far more
@@ -61,7 +56,6 @@ RenderBuffersManager::RenderBuffersManager(bool useBufferMapping, unsigned long 
 		uboMaxSize = (limits.maxUniformBlockSize < 64 * 1024) ? limits.maxUniformBlockSize : 64 * 1024;
 		offsetAlignment = limits.uniformBufferOffsetAlignment;
 	}
-#endif
 
 	BufferSpecifications &uboSpecs = specs_[BufferTypes::UNIFORM];
 	uboSpecs.type = BufferTypes::UNIFORM;
@@ -120,9 +114,7 @@ RenderBuffersManager::Parameters RenderBuffersManager::acquireMemory(BufferTypes
 			{
 				found = true;
 				params.object = buffer.object.get();
-#ifdef WITH_RHI
 				params.rhiObject = usingVulkan() ? buffer.rhiCopies[buffer.currentCopy].get() : buffer.object.get();
-#endif
 				params.offset = offset + alignAmount;
 				params.size = bytes;
 				buffer.freeSpace -= bytes + alignAmount;
@@ -136,9 +128,7 @@ RenderBuffersManager::Parameters RenderBuffersManager::acquireMemory(BufferTypes
 	{
 		createBuffer(specs_[type]);
 		params.object = buffers_.back().object.get();
-#ifdef WITH_RHI
 		params.rhiObject = usingVulkan() ? buffers_.back().rhiCopies[buffers_.back().currentCopy].get() : buffers_.back().object.get();
-#endif
 		params.offset = 0;
 		params.size = bytes;
 		buffers_.back().freeSpace -= bytes;
@@ -163,7 +153,6 @@ void RenderBuffersManager::flushUnmap()
 		const unsigned long usedSize = buffer.size - buffer.freeSpace;
 		FATAL_ASSERT(usedSize <= specs_[buffer.type].maxSize);
 		buffer.freeSpace = buffer.size;
-#ifdef WITH_RHI
 		if (usingVulkan())
 		{
 			if (usedSize > 0)
@@ -171,7 +160,6 @@ void RenderBuffersManager::flushUnmap()
 			buffer.mapBase = nullptr;
 			continue;
 		}
-#endif
 
 		if (specs_[buffer.type].mapFlags == 0)
 		{
@@ -198,7 +186,6 @@ void RenderBuffersManager::remap()
 	{
 		ASSERT(buffer.freeSpace == buffer.size);
 		ASSERT(buffer.mapBase == nullptr);
-#ifdef WITH_RHI
 		if (usingVulkan())
 		{
 			// Called at the end of a frame: the next one gets its own copy, free once `beginFrame()` waited for it
@@ -208,7 +195,6 @@ void RenderBuffersManager::remap()
 			FATAL_ASSERT(buffer.mapBase != nullptr);
 			continue;
 		}
-#endif
 
 		if (specs_[buffer.type].mapFlags == 0)
 		{
@@ -229,7 +215,6 @@ void RenderBuffersManager::createBuffer(const BufferSpecifications &specs)
 	ManagedBuffer managedBuffer;
 	managedBuffer.type = specs.type;
 	managedBuffer.size = specs.maxSize;
-#ifdef WITH_RHI
 	if (usingVulkan())
 	{
 		const unsigned int numCopies = RenderResources::rhiDevice().limits().framesInFlight;
@@ -249,7 +234,6 @@ void RenderBuffersManager::createBuffer(const BufferSpecifications &specs)
 		buffers_.pushBack(nctl::move(managedBuffer));
 		return;
 	}
-#endif
 	managedBuffer.object = nctl::makeUnique<GLBufferObject>(specs.target);
 	managedBuffer.object->bufferData(managedBuffer.size, nullptr, specs.usageFlags);
 	managedBuffer.freeSpace = managedBuffer.size;

@@ -3,7 +3,6 @@
 
 namespace ncine {
 
-#ifdef WITH_RHI
 namespace {
 	GLenum uniformTypeToGL(igfx::UniformType type)
 	{
@@ -31,14 +30,12 @@ namespace {
 		return GL_FLOAT;
 	}
 }
-#endif
 
 
 ///////////////////////////////////////////////////////////
 // CONSTRUCTORS and DESTRUCTOR
 ///////////////////////////////////////////////////////////
 
-#ifdef WITH_RHI
 GLUniform::GLUniform(const igfx::UniformInfo &info, GLint blockIndex)
     : index_(0), blockIndex_(blockIndex), location_(-1), size_(info.arraySize), type_(uniformTypeToGL(info.type)), offset_(info.offset)
 {
@@ -46,7 +43,6 @@ GLUniform::GLUniform(const igfx::UniformInfo &info, GLint blockIndex)
 	name_[MaxNameLength - 1] = '\0';
 }
 
-#endif
 GLUniform::GLUniform()
     : index_(0), blockIndex_(-1), location_(-1), size_(0), type_(GL_FLOAT), offset_(0)
 {

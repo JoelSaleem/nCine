@@ -91,7 +91,6 @@ class RenderCommand
 	void commitNodeTransformation();
 
 	/// Commits the projection and view matrix uniforms
-	void commitCameraTransformation();
 
 	/// Calls all the commit methods except the camera uniforms commit
 	void commitAll();

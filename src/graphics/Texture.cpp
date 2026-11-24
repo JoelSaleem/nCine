@@ -8,9 +8,7 @@
 #include "RenderStatistics.h"
 #include "tracy.h"
 #include "igfx/Resources.h"
-#ifdef WITH_RHI
-	#include "RenderResources.h"
-#endif
+#include "RenderResources.h"
 
 namespace ncine {
 
@@ -66,11 +64,7 @@ Texture::Format formatToNc(GLenum format)
 /// Vulkan mode keeps every texture on the render hardware interface, `glTexture_` stays null
 inline bool usingVulkan()
 {
-#ifdef WITH_RHI
 	return igfx::isVulkanSelected();
-#else
-	return false;
-#endif
 }
 
 igfx::Format rhiFormatFromGL(GLenum internalFormat)
@@ -492,7 +486,6 @@ void *Texture::guiTexId() const
 
 void Texture::initialize(const ITextureLoader &texLoader)
 {
-#ifdef WITH_RHI
 	if (usingVulkan())
 	{
 		const TextureFormat &texFormat = texLoader.texFormat();
@@ -543,7 +536,6 @@ void Texture::initialize(const ITextureLoader &texLoader)
 		dataSize_ = dataSize;
 		return;
 	}
-#endif
 
 	const IGfxCapabilities &gfxCaps = theServiceLocator().gfxCapabilities();
 	const int maxTextureSize = gfxCaps.value(IGfxCapabilities::GLIntValues::MAX_TEXTURE_SIZE);

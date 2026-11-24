@@ -5,9 +5,7 @@
 #include "Camera.h"
 #include "DrawableNode.h"
 #include "tracy.h"
-#ifdef WITH_RHI
-	#include "GLRhiDevice.h"
-#endif
+#include "GLRhiDevice.h"
 
 namespace ncine {
 
@@ -44,7 +42,6 @@ void RenderCommand::calculateMaterialSortKey()
 	materialSortKey_ = upper + lower;
 }
 
-#ifdef WITH_RHI
 void RenderCommand::issue()
 {
 	ZoneScoped;
@@ -90,37 +87,6 @@ void RenderCommand::issue()
 	if (hasScissor)
 		commandList.setScissor(previousScissor);
 }
-#else
-void RenderCommand::issue()
-{
-	ZoneScoped;
-
-	if (geometry_.numVertices_ == 0 && geometry_.numIndices_ == 0)
-		return;
-
-	material_.bind();
-	material_.commitUniforms();
-
-	GLScissorTest::State scissorTestState = GLScissorTest::state();
-	if (scissorRect_.w > 0 && scissorRect_.h > 0)
-		GLScissorTest::enable(scissorRect_);
-
-	unsigned int offset = 0;
-#if (defined(WITH_OPENGLES) && !GL_ES_VERSION_3_2) || defined(__EMSCRIPTEN__)
-	// Simulating missing `glDrawElementsBaseVertex()` on OpenGL ES 3.0
-	if (geometry_.numIndices_ > 0)
-		offset = geometry_.vboParams().offset + (geometry_.firstVertex_ * geometry_.numElementsPerVertex_ * sizeof(GLfloat));
-#endif
-	if (numInstances_ > 0)
-		offset = geometry_.vboParams().offset + (geometry_.firstVertex_ * geometry_.numElementsPerVertex_ * sizeof(GLfloat));
-
-	material_.defineVertexFormat(geometry_.vboParams().object, geometry_.iboParams().object, offset);
-	geometry_.bind();
-	geometry_.draw(numInstances_);
-
-	GLScissorTest::setState(scissorTestState);
-}
-#endif
 
 void RenderCommand::setScissor(GLint x, GLint y, GLsizei width, GLsizei height)
 {
@@ -179,29 +145,6 @@ void RenderCommand::commitNodeTransformation()
 	}
 
 	transformationCommitted_ = true;
-}
-
-void RenderCommand::commitCameraTransformation()
-{
-	ZoneScoped;
-
-	RenderResources::CameraUniformData *cameraUniformData = RenderResources::findCameraUniformData(material_.shaderProgram_);
-	if (cameraUniformData == nullptr)
-	{
-		RenderResources::CameraUniformData newCameraUniformData;
-		newCameraUniformData.shaderUniforms.setProgram(material_.shaderProgram_, Material::ProjectionViewMatrixExcludeString, nullptr);
-		if (newCameraUniformData.shaderUniforms.numUniforms() == 2)
-		{
-			newCameraUniformData.shaderUniforms.setUniformsDataPointer(RenderResources::cameraUniformsBuffer());
-			newCameraUniformData.shaderUniforms.uniform(Material::ProjectionMatrixUniformName)->setDirty(true);
-			newCameraUniformData.shaderUniforms.uniform(Material::ViewMatrixUniformName)->setDirty(true);
-			newCameraUniformData.shaderUniforms.commitUniforms();
-
-			RenderResources::insertCameraUniformData(material_.shaderProgram_, nctl::move(newCameraUniformData));
-		}
-	}
-	else
-		cameraUniformData->shaderUniforms.commitUniforms();
 }
 
 void RenderCommand::commitAll()

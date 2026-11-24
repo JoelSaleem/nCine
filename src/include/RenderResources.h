@@ -8,9 +8,7 @@
 #include <nctl/HashMap.h>
 #include "GLShaderProgram.h" // For the UniquePtr to invoke the destructor
 #include "GLShaderUniforms.h"
-#ifdef WITH_RHI
-	#include "igfx/IDevice.h"
-#endif
+#include "igfx/IDevice.h"
 
 #ifdef WITH_SCENEGRAPH
 	#include "Material.h"
@@ -115,17 +113,6 @@ class RenderResources
 	};
 
 #ifdef WITH_SCENEGRAPH
-	struct CameraUniformData
-	{
-		CameraUniformData()
-		    : camera(nullptr), updateFrameProjectionMatrix(0), updateFrameViewMatrix(0) {}
-
-		GLShaderUniforms shaderUniforms;
-		Camera *camera;
-		unsigned long int updateFrameProjectionMatrix;
-		unsigned long int updateFrameViewMatrix;
-	};
-
 	enum class DefaultVertexShader
 	{
 		SPRITE,
@@ -165,7 +152,6 @@ class RenderResources
 	static inline bool hasBuffersManager() { return buffersManager_ != nullptr; }
 	static inline RenderVaoPool &vaoPool() { return *vaoPool_; }
 	static inline const Hash64 &hash64() { return *hash64_; }
-#ifdef WITH_RHI
 	static inline igfx::IDevice &rhiDevice() { return *rhiDevice_; }
 	/// Command list of the frame being recorded
 	static inline igfx::ICommandList &rhiCommandList() { return *rhiCommandList_; }
@@ -173,7 +159,6 @@ class RenderResources
 	static igfx::IPipeline &rhiPipeline(const igfx::PipelineDesc &desc);
 	/// Drops the cached pipelines of a program that is going away
 	static void forgetProgram(const igfx::IShaderProgram &program);
-#endif
 #ifdef WITH_SCENEGRAPH
 	static inline RenderCommandPool &renderCommandPool() { return *renderCommandPool_; }
 	static inline RenderBatcher &renderBatcher() { return *renderBatcher_; }
@@ -198,9 +183,6 @@ class RenderResources
 	static bool unregisterBatchedShader(const GLShaderProgram *shader);
 
 	static inline unsigned char *cameraUniformsBuffer() { return cameraUniformsBuffer_; }
-	static CameraUniformData *findCameraUniformData(GLShaderProgram *shaderProgram);
-	static void insertCameraUniformData(GLShaderProgram *shaderProgram, CameraUniformData &&cameraUniformData);
-	static bool removeCameraUniformData(GLShaderProgram *shaderProgram);
 
 	static inline const Camera *currentCamera() { return currentCamera_; }
 	static inline const Viewport *currentViewport() { return currentViewport_; }
@@ -209,13 +191,11 @@ class RenderResources
 #endif
 
   private:
-#ifdef WITH_RHI
 	static nctl::UniquePtr<igfx::IDevice> rhiDevice_;
 	static igfx::ICommandList *rhiCommandList_;
 	static nctl::HashMap<uint64_t, igfx::IPipeline *> rhiPipelines_;
 	static nctl::Array<nctl::UniquePtr<igfx::IPipeline>> rhiPipelineStorage_;
 	static inline void setRhiCommandList(igfx::ICommandList *commandList) { rhiCommandList_ = commandList; }
-#endif
 	static nctl::UniquePtr<BinaryShaderCache> binaryShaderCache_;
 	static nctl::UniquePtr<RenderBuffersManager> buffersManager_;
 	static nctl::UniquePtr<RenderVaoPool> vaoPool_;
@@ -232,16 +212,13 @@ class RenderResources
 
 	static const unsigned int NumDefaultShaderPrograms = 20;
 	static nctl::UniquePtr<GLShaderProgram> defaultShaderPrograms_[NumDefaultShaderPrograms];
-#ifdef WITH_RHI
 	/// Default programs compiled by a non-OpenGL device, same indices as `defaultShaderPrograms_`
 	static nctl::UniquePtr<igfx::IShaderProgram> rhiDefaultPrograms_[NumDefaultShaderPrograms];
-#endif
 	/// Hash map from a shader program pointer to the pointer of its batched version
 	static nctl::HashMap<const GLShaderProgram *, GLShaderProgram *> batchedShaders_;
 
 	static const unsigned int UniformsBufferSize = 128; // two 4x4 float matrices
 	static unsigned char cameraUniformsBuffer_[UniformsBufferSize];
-	static nctl::HashMap<GLShaderProgram *, CameraUniformData> cameraUniformDataMap_;
 
 	static Camera *currentCamera_;
 	static nctl::UniquePtr<Camera> defaultCamera_;

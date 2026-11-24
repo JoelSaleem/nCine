@@ -27,26 +27,6 @@ GLShaderUniformBlocks::GLShaderUniformBlocks(GLShaderProgram *shaderProgram, con
 	setProgram(shaderProgram, includeOnly, exclude);
 }
 
-void GLShaderUniformBlocks::bind()
-{
-	static const int offsetAlignment = theServiceLocator().gfxCapabilities().value(IGfxCapabilities::GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT);
-
-	if (uboParams_.object)
-	{
-		uboParams_.object->bind();
-
-		GLintptr moreOffset = 0;
-		for (GLUniformBlockCache &uniformBlockCache : uniformBlockCaches_)
-		{
-			uniformBlockCache.setBlockBinding(uniformBlockCache.index());
-			const GLintptr offset = static_cast<GLintptr>(uboParams_.offset) + moreOffset;
-			ASSERT(offset % offsetAlignment == 0);
-			uboParams_.object->bindBufferRange(uniformBlockCache.bindingIndex(), offset, uniformBlockCache.usedSize());
-			moreOffset += uniformBlockCache.usedSize();
-		}
-	}
-}
-
 ///////////////////////////////////////////////////////////
 // PUBLIC FUNCTIONS
 ///////////////////////////////////////////////////////////
@@ -98,7 +78,6 @@ GLUniformBlockCache *GLShaderUniformBlocks::uniformBlock(const char *name)
 	return const_cast<GLUniformBlockCache *>(static_cast<const GLShaderUniformBlocks &>(*this).uniformBlock(name));
 }
 
-#ifdef WITH_RHI
 void GLShaderUniformBlocks::bind(igfx::ICommandList &commandList)
 {
 	if (uboParams_.rhiObject == nullptr)
@@ -111,7 +90,6 @@ void GLShaderUniformBlocks::bind(igfx::ICommandList &commandList)
 		moreOffset += uniformBlockCache.usedSize();
 	}
 }
-#endif
 
 void GLShaderUniformBlocks::commitUniformBlocks()
 {

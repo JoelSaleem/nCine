@@ -155,16 +155,9 @@ void RenderQueue::draw()
 		commandIndex++;
 
 		RenderStatistics::gatherStatistics(*opaqueRenderCommand);
-#ifndef WITH_RHI // the camera matrices are part of the loose uniforms uploaded by `issue()`
-		opaqueRenderCommand->commitCameraTransformation();
-#endif
 		opaqueRenderCommand->issue();
 	}
 
-#ifndef WITH_RHI // pipelines carry blending and depth writes
-	GLBlending::enable();
-	GLDepthTest::disableDepthMask();
-#endif
 	// Rendering transparent nodes back to front
 	for (RenderCommand *transparentRenderCommand : *transparents)
 	{
@@ -188,22 +181,9 @@ void RenderQueue::draw()
 		commandIndex++;
 
 		RenderStatistics::gatherStatistics(*transparentRenderCommand);
-#ifndef WITH_RHI
-		GLBlending::setBlendFunc(transparentRenderCommand->material().srcBlendingFactor(), transparentRenderCommand->material().destBlendingFactor());
-		transparentRenderCommand->commitCameraTransformation();
-#endif
 		transparentRenderCommand->issue();
 	}
-#ifdef WITH_RHI
 	RenderResources::rhiCommandList().setScissor(Recti(0, 0, 0, 0));
-#else
-	// Depth mask has to be enabled again before exiting this method
-	// or glClear(GL_DEPTH_BUFFER_BIT) won't have any effect
-	GLDepthTest::enableDepthMask();
-	GLBlending::disable();
-
-	GLScissorTest::disable();
-#endif
 }
 
 void RenderQueue::clear()

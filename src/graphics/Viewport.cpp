@@ -28,11 +28,7 @@ namespace ncine {
 namespace {
 	inline bool usingVulkan()
 	{
-#ifdef WITH_RHI
 		return igfx::isVulkanSelected();
-#else
-		return false;
-#endif
 	}
 }
 
@@ -553,7 +549,6 @@ void Viewport::draw(unsigned int nextIndex)
 		fbo_->drawBuffers(numColorAttachments_);
 	}
 
-#ifdef WITH_RHI
 	// The screen is a render pass, cleared when it begins; so are texture viewports on Vulkan
 	const bool isRenderPass = (type_ == Type::SCREEN || (type_ == Type::WITH_TEXTURE && usingVulkan()));
 	if (isRenderPass)
@@ -580,9 +575,6 @@ void Viewport::draw(unsigned int nextIndex)
 		RenderResources::rhiCommandList().beginRenderPass(passDesc);
 	}
 	if (type_ == Type::WITH_TEXTURE && isRenderPass == false)
-#else
-	if (type_ == Type::SCREEN || type_ == Type::WITH_TEXTURE)
-#endif
 	{
 		const unsigned long int numFrames = theApplication().numFrames();
 		if ((lastFrameCleared_ < numFrames && (clearMode_ == ClearMode::EVERY_FRAME || clearMode_ == ClearMode::THIS_FRAME_ONLY)) ||
@@ -590,9 +582,7 @@ void Viewport::draw(unsigned int nextIndex)
 		{
 			const GLClearColor::State clearColorState = GLClearColor::state();
 			GLClearColor::setColor(clearColor_);
-#ifdef WITH_RHI
 			GLDepthTest::enableDepthMask(); // the last pipeline may have disabled depth writes
-#endif
 
 			switch (depthStencilFormat_)
 			{
@@ -628,7 +618,6 @@ void Viewport::draw(unsigned int nextIndex)
 	RenderResources::setCurrentCamera(camera_);
 	RenderResources::updateCameraUniforms();
 
-#ifdef WITH_RHI
 	if (renderQueue_->isEmpty() == false)
 	{
 		igfx::ICommandList &commandList = RenderResources::rhiCommandList();
@@ -649,27 +638,6 @@ void Viewport::draw(unsigned int nextIndex)
 		if (viewportRectNonZeroArea)
 			commandList.setViewport(previousViewport);
 	}
-#else
-	if (renderQueue_->isEmpty() == false)
-	{
-		const bool viewportRectNonZeroArea = (viewportRect_.w > 0 && viewportRect_.h > 0);
-		const GLViewport::State viewportState = GLViewport::state();
-		if (viewportRectNonZeroArea)
-			GLViewport::setRect(viewportRect_.x, viewportRect_.y, viewportRect_.w, viewportRect_.h);
-
-		const bool scissorRectNonZeroArea = (scissorRect_.w > 0 && scissorRect_.h > 0);
-		GLScissorTest::State scissorTestState = GLScissorTest::state();
-		if (scissorRectNonZeroArea)
-			GLScissorTest::enable(scissorRect_.x, scissorRect_.y, scissorRect_.w, scissorRect_.h);
-
-		renderQueue_->draw();
-
-		if (scissorRectNonZeroArea)
-			GLScissorTest::setState(scissorTestState);
-		if (viewportRectNonZeroArea)
-			GLViewport::setState(viewportState);
-	}
-#endif
 
 	if (type_ == Type::WITH_TEXTURE && fbo_ && depthStencilFormat_ != DepthStencilFormat::NONE &&
 	    theApplication().appConfiguration().graphics.opengl.debugContext == false)
@@ -678,10 +646,8 @@ void Viewport::draw(unsigned int nextIndex)
 		fbo_->invalidate(1, &invalidAttachment);
 	}
 
-#ifdef WITH_RHI
 	if (isRenderPass)
 		RenderResources::rhiCommandList().endRenderPass();
-#endif
 
 	if (clearMode_ == ClearMode::THIS_FRAME_ONLY)
 		clearMode_ = ClearMode::NEVER;

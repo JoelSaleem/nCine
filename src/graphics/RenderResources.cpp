@@ -1,6 +1,4 @@
-#ifdef WITH_RHI
-	#include "GLRhiDevice.h"
-#endif
+#include "GLRhiDevice.h"
 #ifdef WITH_VULKAN
 	#include "VkRhiDevice.h"
 #endif
@@ -32,7 +30,6 @@
 namespace ncine {
 
 namespace {
-#ifdef WITH_RHI
 	/// `NCINE_DUMP_REFLECTION=<file>` writes the reflection of every default program, to compare backends
 	void dumpReflection(FILE *file, const char *label, const igfx::IShaderProgram &program)
 	{
@@ -53,15 +50,10 @@ namespace {
 		for (const igfx::AttributeInfo &attribute : program.attributes())
 			fprintf(file, "attribute %s %d\n", attribute.name.data(), static_cast<int>(attribute.type));
 	}
-#endif
 
 	inline bool usingVulkan()
 	{
-#ifdef WITH_RHI
 		return igfx::isVulkanSelected();
-#else
-		return false;
-#endif
 	}
 }
 
@@ -76,13 +68,11 @@ namespace {
 
 char const * const RenderResources::ShadersDir = "shaders";
 
-#ifdef WITH_RHI
 nctl::UniquePtr<igfx::IDevice> RenderResources::rhiDevice_;
 igfx::ICommandList *RenderResources::rhiCommandList_ = nullptr;
 nctl::HashMap<uint64_t, igfx::IPipeline *> RenderResources::rhiPipelines_(64);
 nctl::Array<nctl::UniquePtr<igfx::IPipeline>> RenderResources::rhiPipelineStorage_(64);
 nctl::UniquePtr<igfx::IShaderProgram> RenderResources::rhiDefaultPrograms_[NumDefaultShaderPrograms];
-#endif
 nctl::UniquePtr<BinaryShaderCache> RenderResources::binaryShaderCache_;
 nctl::UniquePtr<RenderBuffersManager> RenderResources::buffersManager_;
 nctl::UniquePtr<RenderVaoPool> RenderResources::vaoPool_;
@@ -97,7 +87,6 @@ nctl::UniquePtr<GLShaderProgram> RenderResources::defaultShaderPrograms_[NumDefa
 nctl::HashMap<const GLShaderProgram *, GLShaderProgram *> RenderResources::batchedShaders_(32);
 
 unsigned char RenderResources::cameraUniformsBuffer_[UniformsBufferSize];
-nctl::HashMap<GLShaderProgram *, RenderResources::CameraUniformData> RenderResources::cameraUniformDataMap_(32);
 
 Camera *RenderResources::currentCamera_ = nullptr;
 nctl::UniquePtr<Camera> RenderResources::defaultCamera_;
@@ -111,7 +100,6 @@ Viewport *RenderResources::currentViewport_ = nullptr;
 /*! \note If not initially provided, the new computed hashes will be written back in the `ShaderCompileInfo` structures */
 void RenderResources::compileShader(ShaderProgramCompileInfo &shaderToCompile)
 {
-#ifdef WITH_RHI
 	if (usingVulkan())
 	{
 		// Same sources (from strings or files), compiled by the Vulkan device and described in place
@@ -137,7 +125,6 @@ void RenderResources::compileShader(ShaderProgramCompileInfo &shaderToCompile)
 		shaderToCompile.shaderProgram->describe(rhiDevice_->createShaderProgram(sources[0], sources[1], shaderToCompile.objectLabel));
 		return;
 	}
-#endif
 	ZoneScoped;
 	if (shaderToCompile.objectLabel)
 	{
@@ -377,31 +364,6 @@ bool RenderResources::unregisterBatchedShader(const GLShaderProgram *shader)
 	return removed;
 }
 
-RenderResources::CameraUniformData *RenderResources::findCameraUniformData(GLShaderProgram *shaderProgram)
-{
-	return cameraUniformDataMap_.find(shaderProgram);
-}
-
-void RenderResources::insertCameraUniformData(GLShaderProgram *shaderProgram, CameraUniformData &&cameraUniformData)
-{
-	FATAL_ASSERT(shaderProgram != nullptr);
-
-	if (cameraUniformDataMap_.loadFactor() >= 0.8f)
-		cameraUniformDataMap_.rehash(cameraUniformDataMap_.capacity() * 2);
-
-	cameraUniformDataMap_.insert(shaderProgram, nctl::move(cameraUniformData));
-}
-
-bool RenderResources::removeCameraUniformData(GLShaderProgram *shaderProgram)
-{
-	bool hasRemoved = false;
-
-	if (cameraUniformDataMap_.isEmpty() == false)
-		hasRemoved = cameraUniformDataMap_.remove(shaderProgram);
-
-	return hasRemoved;
-}
-
 void RenderResources::setDefaultAttributesParameters(GLShaderProgram &shaderProgram)
 {
 	if (shaderProgram.numAttributes() > 0)
@@ -463,27 +425,9 @@ void RenderResources::setCurrentCamera(Camera *camera)
 
 void RenderResources::updateCameraUniforms()
 {
-	// The buffer is shared among every shader program. There is no need to call `setFloatVector()` as `setDirty()` is enough.
+	// The buffer is shared among every shader program, materials copy it into their loose uniforms when drawing
 	memcpy(cameraUniformsBuffer_, currentCamera_->projection().data(), 64);
 	memcpy(cameraUniformsBuffer_ + 64, currentCamera_->view().data(), 64);
-	for (nctl::HashMap<GLShaderProgram *, CameraUniformData>::Iterator i = cameraUniformDataMap_.begin(); i != cameraUniformDataMap_.end(); ++i)
-	{
-		CameraUniformData &cameraUniformData = *i;
-
-		if (cameraUniformData.camera != currentCamera_)
-			(*i).shaderUniforms.setDirty(true);
-		else
-		{
-			if (cameraUniformData.updateFrameProjectionMatrix < currentCamera_->updateFrameProjectionMatrix())
-				(*i).shaderUniforms.uniform(Material::ProjectionMatrixUniformName)->setDirty(true);
-			if (cameraUniformData.updateFrameViewMatrix < currentCamera_->updateFrameViewMatrix())
-				(*i).shaderUniforms.uniform(Material::ViewMatrixUniformName)->setDirty(true);
-		}
-
-		cameraUniformData.camera = currentCamera_;
-		cameraUniformData.updateFrameProjectionMatrix = currentCamera_->updateFrameProjectionMatrix();
-		cameraUniformData.updateFrameViewMatrix = currentCamera_->updateFrameViewMatrix();
-	}
 }
 
 void RenderResources::setCurrentViewport(Viewport *viewport)
@@ -638,7 +582,6 @@ void RenderResources::create()
 
 	const unsigned int numShaderToCompile = (sizeof(shadersToCompile) / sizeof(*shadersToCompile));
 	FATAL_ASSERT(numShaderToCompile <= NumDefaultShaderPrograms);
-#ifdef WITH_RHI
 	const char *reflectionDumpPath = getenv("NCINE_DUMP_REFLECTION");
 	FILE *reflectionDump = (reflectionDumpPath != nullptr) ? fopen(reflectionDumpPath, "w") : nullptr;
 	if (usingVulkan())
@@ -663,7 +606,6 @@ void RenderResources::create()
 		}
 	}
 	else
-#endif
 	for (unsigned int i = 0; i < numShaderToCompile; i++)
 	{
 		ShaderProgramCompileInfo &shaderToCompile = shadersToCompile[i];
@@ -691,14 +633,12 @@ void RenderResources::create()
 			defaultShaderPrograms_[i]->setSortId(i + 1);
 	}
 
-#ifdef WITH_RHI
 	if (reflectionDump)
 	{
 		for (unsigned int i = 0; i < numShaderToCompile; i++)
 			dumpReflection(reflectionDump, shadersToCompile[i].objectLabel, *shadersToCompile[i].shaderProgram);
 		fclose(reflectionDump);
 	}
-#endif
 	registerDefaultBatchedShaders();
 
 	// Calculating a default projection matrix for all shader programs
@@ -710,7 +650,6 @@ void RenderResources::create()
 }
 #endif
 
-#ifdef WITH_RHI
 namespace {
 	uint64_t pipelineKey(const igfx::PipelineDesc &desc)
 	{
@@ -761,7 +700,6 @@ void RenderResources::forgetProgram(const igfx::IShaderProgram &program)
 			i++;
 	}
 }
-#endif
 
 void RenderResources::createMinimal()
 {
@@ -777,15 +715,13 @@ void RenderResources::createMinimal()
 	const AppConfiguration::Graphics::OpenGL &openglCfg = theApplication().appConfiguration().graphics.opengl;
 	// Never available without OpenGL program binaries, but callers can always ask it
 	binaryShaderCache_ = nctl::makeUnique<BinaryShaderCache>(openglCfg.useBinaryShaderCache && usingVulkan() == false, openglCfg.shaderCacheDirname.data());
-#ifdef WITH_RHI
 	// Before the buffers, the Vulkan ones come from it
-	#ifdef WITH_VULKAN
+#ifdef WITH_VULKAN
 	if (usingVulkan())
 		rhiDevice_ = createGlfwVulkanDevice();
 	else
-	#endif
-		rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
 #endif
+		rhiDevice_ = nctl::makeUnique<GLRhiDevice>();
 	// Same order as upstream: the VAO pool binds a VAO the managed index buffer must not attach to
 	buffersManager_ = nctl::makeUnique<RenderBuffersManager>(openglCfg.useBufferMapping, openglCfg.vboSize, openglCfg.iboSize);
 	if (usingVulkan() == false)
@@ -802,24 +738,19 @@ void RenderResources::dispose()
 #if WITH_SCENEGRAPH
 	for (nctl::UniquePtr<GLShaderProgram> &shaderProgram : defaultShaderPrograms_)
 		shaderProgram.reset(nullptr);
-	#ifdef WITH_RHI
 	for (nctl::UniquePtr<igfx::IShaderProgram> &shaderProgram : rhiDefaultPrograms_)
 		shaderProgram.reset(nullptr);
-	#endif
 
-	ASSERT(cameraUniformDataMap_.isEmpty());
 
 	defaultCamera_.reset(nullptr);
 	renderBatcher_.reset(nullptr);
 	renderCommandPool_.reset(nullptr);
 #endif
-#ifdef WITH_RHI
 	rhiPipelines_.clear();
 	rhiPipelineStorage_.clear();
 	rhiCommandList_ = nullptr;
 	buffersManager_.reset(nullptr); // Vulkan buffers must go before the device that allocated them
 	rhiDevice_.reset(nullptr);
-#endif
 	hash64_.reset(nullptr);
 	vaoPool_.reset(nullptr);
 	buffersManager_.reset(nullptr);

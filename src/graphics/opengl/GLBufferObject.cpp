@@ -125,13 +125,9 @@ void *GLBufferObject::mapBufferRange(GLintptr offset, GLsizeiptr length, GLbitfi
 	FATAL_ASSERT(mapped_ == false);
 	mapped_ = true;
 	bind();
-#ifdef WITH_RHI
 	void *ptr = glMapBufferRange(target_, offset, length, access);
 	mappedBase_ = (offset == 0) ? static_cast<uint8_t *>(ptr) : nullptr;
 	return ptr;
-#else
-	return glMapBufferRange(target_, offset, length, access);
-#endif
 }
 
 void GLBufferObject::flushMappedBufferRange(GLintptr offset, GLsizeiptr length)
@@ -145,9 +141,7 @@ GLboolean GLBufferObject::unmap()
 {
 	FATAL_ASSERT(mapped_ == true);
 	mapped_ = false;
-#ifdef WITH_RHI
 	mappedBase_ = nullptr;
-#endif
 	bind();
 	return glUnmapBuffer(target_);
 }

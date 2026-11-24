@@ -52,11 +52,9 @@ Material::Material(GLShaderProgram *program, GLTexture *texture)
 		textureSortIds_[i] = 0;
 	}
 	textures_[0] = texture;
-#ifdef WITH_RHI
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
 		rhiTextures_[i] = nullptr;
 	rhiTextures_[0] = texture;
-#endif
 
 	if (program)
 		setShaderProgram(program);
@@ -115,11 +113,7 @@ void Material::reserveUniformsDataMemory()
 		uniformsHostBufferSize_ = uniformsSize;
 	}
 	GLubyte *dataPointer = uniformsHostBuffer_.get();
-#ifdef WITH_RHI
 	setLooseUniformsData(dataPointer);
-#else
-	shaderUniforms_.setUniformsDataPointer(dataPointer);
-#endif
 	shaderUniformBlocks_.setUniformsDataPointer(&dataPointer[shaderProgram_->uniformsSize()]);
 }
 
@@ -130,11 +124,7 @@ void Material::setUniformsDataPointer(GLubyte *dataPointer)
 
 	uniformsHostBuffer_.reset(nullptr);
 	uniformsHostBufferSize_ = 0;
-#ifdef WITH_RHI
 	setLooseUniformsData(dataPointer);
-#else
-	shaderUniforms_.setUniformsDataPointer(dataPointer);
-#endif
 	shaderUniformBlocks_.setUniformsDataPointer(&dataPointer[shaderProgram_->uniformsSize()]);
 }
 
@@ -153,9 +143,7 @@ bool Material::setTexture(unsigned int unit, const GLTexture *texture)
 	{
 		textures_[unit] = texture;
 		textureSortIds_[unit] = 0;
-#ifdef WITH_RHI
 		rhiTextures_[unit] = texture;
-#endif
 		result = true;
 	}
 	return result;
@@ -170,18 +158,15 @@ bool Material::setTexture(unsigned int unit, const Texture &texture)
 
 bool Material::setTextureFromObject(unsigned int unit, const Texture &texture)
 {
-#ifdef WITH_RHI
 	if (texture.rhiTexture_)
 	{
 		const bool result = setTexture(unit, static_cast<const GLTexture *>(nullptr));
 		setRhiTexture(unit, texture.rhiTexture_.get());
 		return result;
 	}
-#endif
 	return setTexture(unit, texture.glTexture_.get());
 }
 
-#ifdef WITH_RHI
 bool Material::setRhiTexture(unsigned int unit, const igfx::ITexture *texture)
 {
 	if (unit >= GLTexture::MaxTextureUnits)
@@ -189,30 +174,11 @@ bool Material::setRhiTexture(unsigned int unit, const igfx::ITexture *texture)
 	rhiTextures_[unit] = texture;
 	return true;
 }
-#endif
 
 ///////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 ///////////////////////////////////////////////////////////
 
-void Material::bind()
-{
-	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
-	{
-		if (textures_[i] != nullptr)
-			textures_[i]->bind(i);
-		else
-			GLTexture::unbind(i);
-	}
-
-	if (shaderProgram_)
-	{
-		shaderProgram_->use();
-		shaderUniformBlocks_.bind();
-	}
-}
-
-#ifdef WITH_RHI
 void Material::bind(igfx::ICommandList &commandList)
 {
 	for (unsigned int i = 0; i < GLTexture::MaxTextureUnits; i++)
@@ -279,7 +245,6 @@ void Material::setLooseUniformsData(GLubyte *dataPointer)
 		}
 	}
 }
-#endif
 
 void Material::defineVertexFormat(const GLBufferObject *vbo, const GLBufferObject *ibo, unsigned int vboOffset)
 {
@@ -299,7 +264,6 @@ uint32_t Material::sortKey()
 			hash = nctl::fasthash32(&textureSortIds_[i], sizeof(textureSortIds_[i]), hash);
 			continue;
 		}
-#ifdef WITH_RHI
 		// Without GL objects (Vulkan) identity comes from the igfx objects, or every material would batch together
 		if (textures_[i] == nullptr && rhiTextures_[i] != nullptr)
 		{
@@ -307,7 +271,6 @@ uint32_t Material::sortKey()
 			hash = nctl::fasthash32(&textureIdentity, sizeof(textureIdentity), hash);
 			continue;
 		}
-#endif
 		const GLuint textureHandle = (textures_[i] != nullptr) ? textures_[i]->glHandle() : 0;
 		hash = nctl::fasthash32(&textureHandle, sizeof(textureHandle), hash);
 	}

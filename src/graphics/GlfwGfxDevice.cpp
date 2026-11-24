@@ -16,20 +16,14 @@
 
 #define GLFW_VERSION_COMBINED (GLFW_VERSION_MAJOR * 1000 + GLFW_VERSION_MINOR * 100 + GLFW_VERSION_REVISION)
 
-#ifdef WITH_RHI
-	#include "igfx/Types.h"
-#endif
+#include "igfx/Types.h"
 
 namespace ncine {
 
 namespace {
 	inline bool igfxVulkan()
 	{
-#ifdef WITH_RHI
 		return igfx::isVulkanSelected();
-#else
-		return false;
-#endif
 	}
 }
 

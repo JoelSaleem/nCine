@@ -140,11 +140,9 @@ class Material
 	inline void setTextureSortId(unsigned int unit, uint32_t sortId) { if (unit < GLTexture::MaxTextureUnits) textureSortIds_[unit] = sortId; }
 	inline bool setTexture(const GLTexture *texture) { return setTexture(0, texture); }
 	inline bool setTexture(const Texture &texture) { return setTexture(0, texture); }
-#ifdef WITH_RHI
 	/// The textures as the render hardware interface sees them, the GL ones on OpenGL
 	inline const igfx::ITexture *rhiTexture(unsigned int unit) const { return (unit < GLTexture::MaxTextureUnits) ? rhiTextures_[unit] : nullptr; }
 	bool setRhiTexture(unsigned int unit, const igfx::ITexture *texture);
-#endif
 
   private:
 	bool isBlendingEnabled_;
@@ -158,30 +156,23 @@ class Material
 	const GLTexture *textures_[GLTexture::MaxTextureUnits];
 	/// `Texture::sortId_` of each unit, zero for textures not set through a `Texture`
 	uint32_t textureSortIds_[GLTexture::MaxTextureUnits];
-#ifdef WITH_RHI
 	const igfx::ITexture *rhiTextures_[GLTexture::MaxTextureUnits];
-#endif
 
 	/// The size of the memory buffer containing uniform values
 	unsigned int uniformsHostBufferSize_;
 	/// Memory buffer with uniform values to be sent to the GPU
 	nctl::UniquePtr<GLubyte[]> uniformsHostBuffer_;
-#ifdef WITH_RHI
 	GLubyte *looseUniformsData_ = nullptr;
 	int projectionMatrixOffset_ = -1;
 	int viewMatrixOffset_ = -1;
 	/// Loose uniform bits of the camera matrices, always written as every program shares them
 	uint32_t cameraUniformsMask_ = 0;
-#endif
 
-	void bind();
-#ifdef WITH_RHI
 	void bind(igfx::ICommandList &commandList);
 	/// Writes the camera matrices into the loose uniforms and uploads them
 	void commitLooseUniforms(igfx::ICommandList &commandList);
 	/// Points the loose uniform caches at the offsets the reflection reports
 	void setLooseUniformsData(GLubyte *dataPointer);
-#endif
 	/// Wrapper around `GLShaderUniforms::commitUniforms()`
 	inline void commitUniforms() { shaderUniforms_.commitUniforms(); }
 	/// Wrapper around `GLShaderUniformBlocks::commitUniformBlocks()`
