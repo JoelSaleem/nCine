@@ -90,6 +90,17 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	layoutInfo.setLayoutCount = 1;
 	layoutInfo.pSetLayouts = &setLayout_;
 	vkCreatePipelineLayout(device_.device_, &layoutInfo, nullptr, &layout_);
+}
+
+VkPipeline VkRhiPipeline::pipelineFor(VkFormat colorFormat, VkFormat depthFormat, bool flippedViewport)
+{
+	for (const Variant &variant : variants_)
+	{
+		if (variant.colorFormat == colorFormat && variant.depthFormat == depthFormat && variant.flippedViewport == flippedViewport)
+			return variant.pipeline;
+	}
+	if (isValid() == false || variants_.size() == variants_.capacity())
+		return VK_NULL_HANDLE;
 
 	VkPipelineShaderStageCreateInfo shaderStages[2] = { { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO }, { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO } };
 	shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -103,7 +114,7 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	nctl::StaticArray<VkVertexInputAttributeDescription, igfx::VertexLayout::MaxAttributes> vertexAttributes;
 	bool hasPerVertex = false;
 	bool hasPerInstance = false;
-	for (const igfx::VertexAttribute &attribute : desc.vertexLayout.attributes)
+	for (const igfx::VertexAttribute &attribute : desc_.vertexLayout.attributes)
 	{
 		vertexAttributes.pushBack({ attribute.location, attribute.perInstance ? 1u : 0u, vertexFormatToVk(attribute.format), attribute.offset });
 		hasPerVertex = hasPerVertex || (attribute.perInstance == false);
@@ -111,9 +122,9 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	}
 	nctl::StaticArray<VkVertexInputBindingDescription, 2> vertexBindings;
 	if (hasPerVertex)
-		vertexBindings.pushBack({ 0, desc.vertexLayout.stride, VK_VERTEX_INPUT_RATE_VERTEX });
+		vertexBindings.pushBack({ 0, desc_.vertexLayout.stride, VK_VERTEX_INPUT_RATE_VERTEX });
 	if (hasPerInstance)
-		vertexBindings.pushBack({ 1, desc.vertexLayout.instanceStride, VK_VERTEX_INPUT_RATE_INSTANCE });
+		vertexBindings.pushBack({ 1, desc_.vertexLayout.instanceStride, VK_VERTEX_INPUT_RATE_INSTANCE });
 	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 	vertexInput.vertexBindingDescriptionCount = vertexBindings.size();
 	vertexInput.pVertexBindingDescriptions = vertexBindings.data();
@@ -121,7 +132,7 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	vertexInput.pVertexAttributeDescriptions = vertexAttributes.data();
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
-	inputAssembly.topology = topologyToVk(desc.topology);
+	inputAssembly.topology = topologyToVk(desc_.topology);
 
 	// OpenGL's [-1, 1] clip depth, so projections need no change
 	VkPipelineViewportDepthClipControlCreateInfoEXT depthClipControl = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT };
@@ -133,24 +144,24 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 
 	VkPipelineRasterizationStateCreateInfo rasterization = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 	rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterization.cullMode = (desc.cullMode == igfx::CullMode::FRONT) ? VK_CULL_MODE_FRONT_BIT : (desc.cullMode == igfx::CullMode::BACK) ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-	// The negative viewport height mirrors the winding, so OpenGL's counter-clockwise front faces become clockwise
-	rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterization.cullMode = (desc_.cullMode == igfx::CullMode::FRONT) ? VK_CULL_MODE_FRONT_BIT : (desc_.cullMode == igfx::CullMode::BACK) ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+	// A negative viewport height mirrors the winding, so OpenGL's counter-clockwise front faces become clockwise
+	rasterization.frontFace = flippedViewport ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterization.lineWidth = 1.0f;
 
 	VkPipelineMultisampleStateCreateInfo multisample = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
 	VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-	depthStencil.depthTestEnable = desc.depth.testEnabled ? VK_TRUE : VK_FALSE;
-	depthStencil.depthWriteEnable = desc.depth.writeEnabled ? VK_TRUE : VK_FALSE;
-	depthStencil.depthCompareOp = CompareOps[static_cast<int>(desc.depth.compareOp)];
+	depthStencil.depthTestEnable = desc_.depth.testEnabled ? VK_TRUE : VK_FALSE;
+	depthStencil.depthWriteEnable = desc_.depth.writeEnabled ? VK_TRUE : VK_FALSE;
+	depthStencil.depthCompareOp = CompareOps[static_cast<int>(desc_.depth.compareOp)];
 
 	VkPipelineColorBlendAttachmentState blendAttachment = {};
-	blendAttachment.blendEnable = desc.blend.enabled ? VK_TRUE : VK_FALSE;
+	blendAttachment.blendEnable = desc_.blend.enabled ? VK_TRUE : VK_FALSE;
 	// glBlendFunc() applies the same factors to color and alpha
-	blendAttachment.srcColorBlendFactor = BlendFactors[static_cast<int>(desc.blend.srcFactor)];
-	blendAttachment.dstColorBlendFactor = BlendFactors[static_cast<int>(desc.blend.dstFactor)];
+	blendAttachment.srcColorBlendFactor = BlendFactors[static_cast<int>(desc_.blend.srcFactor)];
+	blendAttachment.dstColorBlendFactor = BlendFactors[static_cast<int>(desc_.blend.dstFactor)];
 	blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
 	blendAttachment.srcAlphaBlendFactor = blendAttachment.srcColorBlendFactor;
 	blendAttachment.dstAlphaBlendFactor = blendAttachment.dstColorBlendFactor;
@@ -165,13 +176,12 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	dynamicState.dynamicStateCount = 2;
 	dynamicState.pDynamicStates = dynamicStates;
 
-	const VkFormat colorFormat = device_.swapchainFormat_;
 	VkPipelineRenderingCreateInfo renderingInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
 	renderingInfo.colorAttachmentCount = 1;
 	renderingInfo.pColorAttachmentFormats = &colorFormat;
-	renderingInfo.depthAttachmentFormat = device_.depthFormat_;
-	if (device_.depthFormat_ == VK_FORMAT_D24_UNORM_S8_UINT || device_.depthFormat_ == VK_FORMAT_D32_SFLOAT_S8_UINT)
-		renderingInfo.stencilAttachmentFormat = device_.depthFormat_;
+	renderingInfo.depthAttachmentFormat = depthFormat;
+	if (depthFormat == VK_FORMAT_D24_UNORM_S8_UINT || depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT)
+		renderingInfo.stencilAttachmentFormat = depthFormat;
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 	pipelineInfo.pNext = &renderingInfo;
@@ -186,17 +196,20 @@ VkRhiPipeline::VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc
 	pipelineInfo.pColorBlendState = &colorBlend;
 	pipelineInfo.pDynamicState = &dynamicState;
 	pipelineInfo.layout = layout_;
-	if (vkCreateGraphicsPipelines(device_.device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS)
+	VkPipeline pipeline = VK_NULL_HANDLE;
+	if (vkCreateGraphicsPipelines(device_.device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
 	{
 		LOGE("vkCreateGraphicsPipelines() failed");
-		pipeline_ = VK_NULL_HANDLE;
+		return VK_NULL_HANDLE;
 	}
+	variants_.pushBack({ colorFormat, depthFormat, flippedViewport, pipeline });
+	return pipeline;
 }
 
 VkRhiPipeline::~VkRhiPipeline()
 {
-	if (pipeline_ != VK_NULL_HANDLE)
-		vkDestroyPipeline(device_.device_, pipeline_, nullptr);
+	for (const Variant &variant : variants_)
+		vkDestroyPipeline(device_.device_, variant.pipeline, nullptr);
 	if (layout_ != VK_NULL_HANDLE)
 		vkDestroyPipelineLayout(device_.device_, layout_, nullptr);
 	if (setLayout_ != VK_NULL_HANDLE)

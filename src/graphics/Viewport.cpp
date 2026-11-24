@@ -26,6 +26,18 @@
 namespace ncine {
 
 namespace {
+	inline bool usingVulkan()
+	{
+#ifdef WITH_RHI
+		return igfx::isVulkanSelected();
+#else
+		return false;
+#endif
+	}
+}
+
+
+namespace {
 	/// The string used to output OpenGL debug group information
 	static nctl::StaticString<64> debugString;
 }
@@ -86,7 +98,8 @@ Viewport::Viewport(const char *name, Texture *texture, DepthStencilFormat depthS
 		const bool texAdded = setTexture(texture);
 		if (texAdded)
 		{
-			fbo_->setObjectLabel(name);
+			if (fbo_)
+				fbo_->setObjectLabel(name);
 			if (depthStencilFormat != DepthStencilFormat::NONE)
 			{
 				const bool depthStencilAdded = setDepthStencilFormat(depthStencilFormat);
@@ -141,6 +154,34 @@ bool Viewport::setTexture(unsigned int index, Texture *texture)
 	}
 
 	bool result = false;
+	if (usingVulkan())
+	{
+		// No framebuffer object: the draw begins a render pass into the texture
+		const unsigned int attachments = numColorAttachments_ + ((texture != nullptr) ? 1 : 0) - ((texture == nullptr && textures_[index] != nullptr) ? 1 : 0);
+		if (texture != nullptr && texture->rhiTexture_ == nullptr)
+			return false;
+		textures_[index] = texture;
+		numColorAttachments_ = attachments;
+		if (numColorAttachments_ > 0)
+		{
+			type_ = Type::WITH_TEXTURE;
+			if (width_ == 0 || height_ == 0)
+			{
+				width_ = texture->width();
+				height_ = texture->height();
+				viewportRect_.set(0, 0, width_, height_);
+			}
+		}
+		else
+		{
+			depthStencilFormat_ = DepthStencilFormat::NONE;
+			type_ = Type::NO_TEXTURE;
+			width_ = 0;
+			height_ = 0;
+		}
+		return true;
+	}
+
 	if (texture != nullptr)
 	{
 		// Adding a new texture
@@ -199,6 +240,12 @@ bool Viewport::setDepthStencilFormat(DepthStencilFormat depthStencilFormat)
 {
 	if (depthStencilFormat_ == depthStencilFormat || type_ == Type::NO_TEXTURE)
 		return false;
+	if (usingVulkan())
+	{
+		// ponytail: render target textures always get a depth/stencil buffer on Vulkan, the format is only recorded
+		depthStencilFormat_ = depthStencilFormat;
+		return true;
+	}
 
 	bool result = false;
 	if (depthStencilFormat != Viewport::DepthStencilFormat::NONE)
@@ -500,15 +547,16 @@ void Viewport::draw(unsigned int nextIndex)
 		LOGV_X("IAppEventHandler::onDrawViewport() invoked with viewport 0x%lx", uintptr_t(this));
 	}
 
-	if (type_ == Type::WITH_TEXTURE)
+	if (type_ == Type::WITH_TEXTURE && fbo_)
 	{
 		fbo_->bind(GL_DRAW_FRAMEBUFFER);
 		fbo_->drawBuffers(numColorAttachments_);
 	}
 
 #ifdef WITH_RHI
-	// The screen is a render pass, cleared when it begins; texture viewports join in the render-to-texture slice
-	if (type_ == Type::SCREEN)
+	// The screen is a render pass, cleared when it begins; so are texture viewports on Vulkan
+	const bool isRenderPass = (type_ == Type::SCREEN || (type_ == Type::WITH_TEXTURE && usingVulkan()));
+	if (isRenderPass)
 	{
 		const unsigned long int numFrames = theApplication().numFrames();
 		igfx::RenderPassDesc passDesc;
@@ -527,9 +575,11 @@ void Viewport::draw(unsigned int nextIndex)
 			passDesc.clear.color = clearColor_;
 			lastFrameCleared_ = numFrames;
 		}
+		if (type_ == Type::WITH_TEXTURE)
+			passDesc.colorTarget = textures_[0]->rhiTexture_.get();
 		RenderResources::rhiCommandList().beginRenderPass(passDesc);
 	}
-	if (type_ == Type::WITH_TEXTURE)
+	if (type_ == Type::WITH_TEXTURE && isRenderPass == false)
 #else
 	if (type_ == Type::SCREEN || type_ == Type::WITH_TEXTURE)
 #endif
@@ -621,7 +671,7 @@ void Viewport::draw(unsigned int nextIndex)
 	}
 #endif
 
-	if (type_ == Type::WITH_TEXTURE && depthStencilFormat_ != DepthStencilFormat::NONE &&
+	if (type_ == Type::WITH_TEXTURE && fbo_ && depthStencilFormat_ != DepthStencilFormat::NONE &&
 	    theApplication().appConfiguration().graphics.opengl.debugContext == false)
 	{
 		const GLenum invalidAttachment = depthStencilFormatToGLAttachment(depthStencilFormat_);
@@ -629,7 +679,7 @@ void Viewport::draw(unsigned int nextIndex)
 	}
 
 #ifdef WITH_RHI
-	if (type_ == Type::SCREEN)
+	if (isRenderPass)
 		RenderResources::rhiCommandList().endRenderPass();
 #endif
 
@@ -637,7 +687,7 @@ void Viewport::draw(unsigned int nextIndex)
 		clearMode_ = ClearMode::NEVER;
 	// `ClearMode::NEXT_FRAME_ONLY` is handled after the whole chain is drawn
 
-	if (type_ == Type::WITH_TEXTURE)
+	if (type_ == Type::WITH_TEXTURE && fbo_)
 	{
 #if defined(WITH_QT5) || defined(WITH_QT6)
 		QtGfxDevice &gfxDevice = static_cast<QtGfxDevice &>(theApplication().gfxDevice());

@@ -58,8 +58,8 @@ VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
 	imageInfo.arrayLayers = 1;
 	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-	                  (desc.renderTarget ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0);
+	// ponytail: every texture can be a render target, as any `Texture` can be attached to a viewport later
+	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	VmaAllocationCreateInfo allocationInfo = {};
 	allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	if (vmaCreateImage(device_.allocator_, &imageInfo, &allocationInfo, &image_, &allocation_, nullptr) != VK_SUCCESS)
@@ -78,6 +78,8 @@ VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
 		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE }; // like GL_RED
 	else if (desc.format == igfx::Format::RG8)
 		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE }; // like GL_RG
+	else if (desc.format == igfx::Format::RGB8)
+		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_ONE }; // like GL_RGB, whatever rendering wrote into alpha
 	vkCreateImageView(device_.device_, &viewInfo, nullptr, &view_);
 
 	setSampler(desc.sampler);
@@ -85,12 +87,58 @@ VkRhiTexture::VkRhiTexture(VkRhiDevice &device, const igfx::TextureDesc &desc)
 
 VkRhiTexture::~VkRhiTexture()
 {
+	if (depthView_ != VK_NULL_HANDLE)
+		vkDestroyImageView(device_.device_, depthView_, nullptr);
+	if (depthImage_ != VK_NULL_HANDLE)
+		vmaDestroyImage(device_.allocator_, depthImage_, depthAllocation_);
+	if (attachmentView_ != VK_NULL_HANDLE)
+		vkDestroyImageView(device_.device_, attachmentView_, nullptr);
 	if (sampler_ != VK_NULL_HANDLE)
 		vkDestroySampler(device_.device_, sampler_, nullptr);
 	if (view_ != VK_NULL_HANDLE)
 		vkDestroyImageView(device_.device_, view_, nullptr);
 	if (image_ != VK_NULL_HANDLE)
 		vmaDestroyImage(device_.allocator_, image_, allocation_);
+}
+
+bool VkRhiTexture::prepareRenderTarget()
+{
+	if (attachmentView_ != VK_NULL_HANDLE)
+		return true;
+	if (isValid() == false)
+		return false;
+
+	// Attachment views need the identity swizzle and a single level
+	VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	viewInfo.image = image_;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewInfo.format = format_;
+	viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+	if (vkCreateImageView(device_.device_, &viewInfo, nullptr, &attachmentView_) != VK_SUCCESS)
+		return false;
+
+	const VkFormat depthFormat = device_.depthFormat_;
+	VkImageCreateInfo depthInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+	depthInfo.imageType = VK_IMAGE_TYPE_2D;
+	depthInfo.format = depthFormat;
+	depthInfo.extent = { static_cast<uint32_t>(desc_.width), static_cast<uint32_t>(desc_.height), 1 };
+	depthInfo.mipLevels = 1;
+	depthInfo.arrayLayers = 1;
+	depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	VmaAllocationCreateInfo allocationInfo = {};
+	allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+	if (vmaCreateImage(device_.allocator_, &depthInfo, &allocationInfo, &depthImage_, &depthAllocation_, nullptr) != VK_SUCCESS)
+		return false;
+
+	const bool stencil = (depthFormat == VK_FORMAT_D24_UNORM_S8_UINT || depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT);
+	VkImageViewCreateInfo depthViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	depthViewInfo.image = depthImage_;
+	depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	depthViewInfo.format = depthFormat;
+	depthViewInfo.subresourceRange = { static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT | (stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0)), 0, 1, 0, 1 };
+	return vkCreateImageView(device_.device_, &depthViewInfo, nullptr, &depthView_) == VK_SUCCESS;
 }
 
 unsigned int VkRhiTexture::levelWidth(unsigned int mipLevel) const

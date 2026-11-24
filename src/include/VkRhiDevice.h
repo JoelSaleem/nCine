@@ -101,8 +101,10 @@ class VkRhiPipeline : public igfx::IPipeline
 	VkRhiPipeline(VkRhiDevice &device, const igfx::PipelineDesc &desc);
 	~VkRhiPipeline() override;
 
-	inline bool isValid() const { return pipeline_ != VK_NULL_HANDLE; }
+	inline bool isValid() const { return layout_ != VK_NULL_HANDLE && program_ != nullptr; }
 	const igfx::PipelineDesc &desc() const override { return desc_; }
+	/// The pipeline for the attachment formats of the current render pass, created on first use
+	VkPipeline pipelineFor(VkFormat colorFormat, VkFormat depthFormat, bool flippedViewport);
 
   private:
 	VkRhiDevice &device_;
@@ -110,7 +112,14 @@ class VkRhiPipeline : public igfx::IPipeline
 	VkRhiShaderProgram *program_ = nullptr;
 	VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
 	VkPipelineLayout layout_ = VK_NULL_HANDLE;
-	VkPipeline pipeline_ = VK_NULL_HANDLE;
+	struct Variant
+	{
+		VkFormat colorFormat;
+		VkFormat depthFormat;
+		bool flippedViewport;
+		VkPipeline pipeline;
+	};
+	nctl::StaticArray<Variant, 4> variants_;
 	int looseBinding_ = -1;
 	nctl::StaticArray<int, MaxBindings> blockBindings_;
 	/// Sampler `k` reads texture unit `k`
@@ -129,6 +138,9 @@ class VkRhiTexture : public igfx::ITexture
 	inline bool isValid() const { return image_ != VK_NULL_HANDLE; }
 	inline VkImageView view() const { return view_; }
 	inline VkSampler sampler() const { return sampler_; }
+	inline VkFormat format() const { return format_; }
+	/// Creates, once, the level 0 attachment view and the depth buffer used when rendering into this texture
+	bool prepareRenderTarget();
 
 	const igfx::TextureDesc &desc() const override { return desc_; }
 	void upload(unsigned int mipLevel, const void *data) override;
@@ -146,12 +158,19 @@ class VkRhiTexture : public igfx::ITexture
 	VkImageView view_ = VK_NULL_HANDLE;
 	VkSampler sampler_ = VK_NULL_HANDLE;
 	VkImageLayout layouts_[MaxMipLevels];
+	VkImageView attachmentView_ = VK_NULL_HANDLE;
+	VkImage depthImage_ = VK_NULL_HANDLE;
+	VmaAllocation depthAllocation_ = nullptr;
+	VkImageView depthView_ = VK_NULL_HANDLE;
+	VkImageLayout depthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	unsigned int levelWidth(unsigned int mipLevel) const;
 	unsigned int levelHeight(unsigned int mipLevel) const;
 	/// Bytes per pixel as stored, which differs from the upload format for RGB8
 	unsigned int storedBytesPerPixel() const;
 	void transitionLevel(VkCommandBuffer commandBuffer, unsigned int mipLevel, VkImageLayout newLayout);
+
+	friend class VkRhiCommandList;
 };
 
 class VkRhiCommandList : public igfx::ICommandList
@@ -163,7 +182,8 @@ class VkRhiCommandList : public igfx::ICommandList
 	void beginRenderPass(const igfx::RenderPassDesc &desc) override;
 	void endRenderPass() override;
 
-	/// Rectangles are OpenGL style (origin bottom-left), flipped with a negative viewport height
+	/// Rectangles are OpenGL style (origin bottom-left): flipped with a negative viewport height for the swapchain,
+	/// unflipped for textures, whose rows OpenGL stores bottom first and the renderer samples that way
 	void setViewport(const Recti &rect) override;
 	void setScissor(const Recti &rect) override;
 	Recti viewport() const override { return viewport_; }
@@ -195,11 +215,25 @@ class VkRhiCommandList : public igfx::ICommandList
 	Recti viewport_;
 	Recti scissor_;
 	VkRhiPipeline *pipeline_ = nullptr;
+	/// The attachments of the current render pass: the swapchain image or a render target texture
+	VkExtent2D passExtent_ = { 0, 0 };
+	VkFormat passColorFormat_ = VK_FORMAT_UNDEFINED;
+	VkFormat passDepthFormat_ = VK_FORMAT_UNDEFINED;
+	VkRhiTexture *passTarget_ = nullptr;
+	/// Vulkan render passes cannot nest, a pass begun inside another suspends it until it ends
+	struct SuspendedPass
+	{
+		VkRhiTexture *target;
+		Recti viewport;
+		Recti scissor;
+	};
+	nctl::StaticArray<SuspendedPass, 4> suspendedPasses_;
 	UniformBufferBinding uniformBuffers_[VkRhiPipeline::MaxBindings];
 	const VkRhiTexture *textures_[MaxTextureUnits] = {};
 
 	/// Pushes the descriptors of the bound pipeline: loose uniforms, uniform blocks and textures
 	void pushDescriptors();
+	void beginTexturePass(VkRhiTexture &target, const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth);
 
 	friend class VkRhiDevice;
 };

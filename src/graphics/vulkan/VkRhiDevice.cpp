@@ -134,16 +134,27 @@ void VkRhiBuffer::update(unsigned long offset, unsigned long size, const void *d
 
 void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 {
-	ASSERT(insideRenderPass_ == false);
-	if (desc.colorTarget != nullptr)
+	// A texture viewport drawn from inside the screen pass (e.g. behind a sub-viewport), as OpenGL allows
+	if (insideRenderPass_)
 	{
-		notImplemented("rendering to a texture");
-		return;
+		FATAL_ASSERT_MSG(suspendedPasses_.size() < suspendedPasses_.capacity(), "Too many nested render passes");
+		suspendedPasses_.pushBack({ passTarget_, viewport_, scissor_ });
+		vkCmdEndRendering(commandBuffer_);
+		insideRenderPass_ = false;
 	}
-
-	VkRhiDevice::SwapchainImage &image = device_.swapchainImages_[device_.imageIndex_];
 	const bool clearColor = (desc.clear.flags & igfx::CLEAR_COLOR);
 	const bool clearDepth = (desc.clear.flags & igfx::CLEAR_DEPTH);
+	if (desc.colorTarget != nullptr)
+	{
+		beginTexturePass(*const_cast<VkRhiTexture *>(static_cast<const VkRhiTexture *>(desc.colorTarget)), desc, clearColor, clearDepth);
+		return;
+	}
+	passTarget_ = nullptr;
+	passExtent_ = device_.swapchainExtent_;
+	passColorFormat_ = device_.swapchainFormat_;
+	passDepthFormat_ = device_.depthFormat_;
+
+	VkRhiDevice::SwapchainImage &image = device_.swapchainImages_[device_.imageIndex_];
 
 	// Clearing discards the old contents, so the transition can start from an undefined layout
 	device_.transitionImage(image.image, VK_IMAGE_ASPECT_COLOR_BIT, clearColor ? VK_IMAGE_LAYOUT_UNDEFINED : image.layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -186,24 +197,100 @@ void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 	setScissor(Recti(0, 0, 0, 0));
 }
 
+void VkRhiCommandList::beginTexturePass(VkRhiTexture &target, const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth)
+{
+	if (target.prepareRenderTarget() == false)
+	{
+		LOGE("Cannot render into the texture, it has no attachment views");
+		return;
+	}
+	passTarget_ = &target;
+	passExtent_ = { static_cast<uint32_t>(target.desc().width), static_cast<uint32_t>(target.desc().height) };
+	passColorFormat_ = target.format();
+	passDepthFormat_ = device_.depthFormat_;
+
+	if (clearColor)
+		target.layouts_[0] = VK_IMAGE_LAYOUT_UNDEFINED; // its contents are discarded anyway
+	target.transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	const VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil(passDepthFormat_) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+	const VkPipelineStageFlags2 depthStages = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+	device_.transitionImage(target.depthImage_, depthAspect, clearDepth ? VK_IMAGE_LAYOUT_UNDEFINED : target.depthLayout_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+	                        depthStages, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, depthStages,
+	                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+	target.depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+	colorAttachment.imageView = target.attachmentView_;
+	colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colorAttachment.loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.clearValue.color = { { desc.clear.color.r(), desc.clear.color.g(), desc.clear.color.b(), desc.clear.color.a() } };
+	VkRenderingAttachmentInfo depthAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+	depthAttachment.imageView = target.depthView_;
+	depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	depthAttachment.loadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	depthAttachment.clearValue.depthStencil = { desc.clear.depth, static_cast<uint32_t>(desc.clear.stencil) };
+
+	VkRenderingInfo renderingInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+	renderingInfo.renderArea = { { 0, 0 }, passExtent_ };
+	renderingInfo.layerCount = 1;
+	renderingInfo.colorAttachmentCount = 1;
+	renderingInfo.pColorAttachments = &colorAttachment;
+	renderingInfo.pDepthAttachment = &depthAttachment;
+	if (hasStencil(passDepthFormat_))
+		renderingInfo.pStencilAttachment = &depthAttachment;
+	vkCmdBeginRendering(commandBuffer_, &renderingInfo);
+	insideRenderPass_ = true;
+
+	setViewport(Recti(0, 0, static_cast<int>(passExtent_.width), static_cast<int>(passExtent_.height)));
+	setScissor(Recti(0, 0, 0, 0));
+}
+
 void VkRhiCommandList::endRenderPass()
 {
 	if (insideRenderPass_ == false)
 		return;
 	vkCmdEndRendering(commandBuffer_);
 	insideRenderPass_ = false;
+	// Later draws sample what was rendered into a texture
+	if (passTarget_)
+		passTarget_->transitionLevel(commandBuffer_, 0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	passTarget_ = nullptr;
+
+	if (suspendedPasses_.isEmpty() == false)
+	{
+		// Resume the outer pass, keeping what it drew so far
+		const SuspendedPass suspended = suspendedPasses_.back();
+		suspendedPasses_.popBack();
+		igfx::RenderPassDesc resume;
+		resume.colorTarget = suspended.target;
+		resume.clear.flags = igfx::CLEAR_NONE;
+		beginRenderPass(resume);
+		setViewport(suspended.viewport);
+		setScissor(suspended.scissor);
+	}
 }
 
 void VkRhiCommandList::setViewport(const Recti &rect)
 {
 	viewport_ = rect;
-	const float extentHeight = static_cast<float>(device_.swapchainExtent_.height);
-	// A negative height keeps OpenGL's bottom-left origin (core since Vulkan 1.1)
+	const float extentHeight = static_cast<float>(passExtent_.height);
 	VkViewport viewport;
 	viewport.x = static_cast<float>(rect.x);
-	viewport.y = extentHeight - static_cast<float>(rect.y);
 	viewport.width = static_cast<float>(rect.w);
-	viewport.height = -static_cast<float>(rect.h);
+	if (passTarget_ == nullptr)
+	{
+		// A negative height keeps OpenGL's bottom-left origin on screen (core since Vulkan 1.1)
+		viewport.y = extentHeight - static_cast<float>(rect.y);
+		viewport.height = -static_cast<float>(rect.h);
+	}
+	else
+	{
+		// Unflipped: row 0 is the bottom one, as in OpenGL render targets
+		viewport.y = static_cast<float>(rect.y);
+		viewport.height = static_cast<float>(rect.h);
+	}
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 	vkCmdSetViewport(commandBuffer_, 0, 1, &viewport);
@@ -212,12 +299,19 @@ void VkRhiCommandList::setViewport(const Recti &rect)
 void VkRhiCommandList::setScissor(const Recti &rect)
 {
 	scissor_ = (rect.w > 0 && rect.h > 0) ? rect : Recti(0, 0, 0, 0);
-	VkRect2D scissor = { { 0, 0 }, device_.swapchainExtent_ };
+	VkRect2D scissor = { { 0, 0 }, passExtent_ };
 	if (rect.w > 0 && rect.h > 0)
 	{
-		const int top = static_cast<int>(device_.swapchainExtent_.height) - rect.y - rect.h;
-		scissor.offset = { rect.x, top > 0 ? top : 0 };
-		scissor.extent = { static_cast<uint32_t>(rect.w), static_cast<uint32_t>(rect.h) };
+		// Clamped to the attachment like glScissor(), Vulkan rejects negative offsets
+		const int width = static_cast<int>(passExtent_.width);
+		const int height = static_cast<int>(passExtent_.height);
+		const int top = (passTarget_ == nullptr) ? height - rect.y - rect.h : rect.y;
+		const int x0 = nctl::max(rect.x, 0);
+		const int y0 = nctl::max(top, 0);
+		const int x1 = nctl::min(rect.x + rect.w, width);
+		const int y1 = nctl::min(top + rect.h, height);
+		scissor.offset = { x0, y0 };
+		scissor.extent = { static_cast<uint32_t>(nctl::max(x1 - x0, 0)), static_cast<uint32_t>(nctl::max(y1 - y0, 0)) };
 	}
 	vkCmdSetScissor(commandBuffer_, 0, 1, &scissor);
 }
@@ -225,8 +319,11 @@ void VkRhiCommandList::setScissor(const Recti &rect)
 void VkRhiCommandList::bindPipeline(igfx::IPipeline &pipeline)
 {
 	pipeline_ = &static_cast<VkRhiPipeline &>(pipeline);
-	if (pipeline_->isValid())
-		vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->pipeline_);
+	const VkPipeline vkPipeline = pipeline_->pipelineFor(passColorFormat_, passDepthFormat_, passTarget_ == nullptr);
+	if (vkPipeline != VK_NULL_HANDLE)
+		vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
+	else
+		pipeline_ = nullptr; // nothing to draw with
 }
 
 void VkRhiCommandList::bindVertexBuffer(igfx::IBuffer &buffer, unsigned long offset)
