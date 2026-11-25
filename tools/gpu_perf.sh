@@ -12,9 +12,16 @@ DATA="${1:-${NCINE_DATA_DIR:-$PWD/../nCine-data}}"
 OUT=gpu-perf
 mkdir -p "$OUT/gl" "$OUT/vk"
 
+if [ "$(uname)" = Darwin ] && [ ! -d ../nCine-external ]; then
+	echo "macOS needs the prebuilt nCine-external frameworks next to this checkout, see the handover doc (nCine-libraries-artifacts)"
+	exit 2
+fi
 build() { # <dir> <NCINE_WITH_VULKAN>
-	cmake -S . -B "$1" -DCMAKE_BUILD_TYPE=Release -DNCINE_DATA_DIR="$DATA" -DNCINE_WITH_VULKAN="$2" >"$OUT/configure-$(basename "$1").log"
-	cmake --build "$1" -j"$(nproc)" >"$OUT/build-$(basename "$1").log"
+	local name; name=$(basename "$1")
+	cmake -S . -B "$1" -DCMAKE_BUILD_TYPE=Release -DNCINE_DATA_DIR="$DATA" -DNCINE_WITH_VULKAN="$2" >"$OUT/configure-$name.log" 2>&1 ||
+		{ tail -20 "$OUT/configure-$name.log"; echo "configure of $name failed, full log in $OUT/configure-$name.log"; exit 1; }
+	cmake --build "$1" -j"$(getconf _NPROCESSORS_ONLN)" >"$OUT/build-$name.log" 2>&1 ||
+		{ grep -m5 -i "error" "$OUT/build-$name.log"; echo "build of $name failed, full log in $OUT/build-$name.log"; exit 1; }
 }
 BUILD_GL="${BUILD_GL:-build-gpu-gl}"
 BUILD_VK="${BUILD_VK:-build-gpu-vk}"
@@ -24,10 +31,10 @@ BUILD_VK="${BUILD_VK:-build-gpu-vk}"
 for dir in "$OUT/gl" "$OUT/vk"; do
 	cp goldens/apptest_list.txt goldens/nondeterministic.txt "$dir/"
 done
-[ -e /dev/dri ] && echo "GPU device found: measuring on it" || echo "No /dev/dri: verify.sh falls back to software rendering, numbers are advisory"
+if [ "$(uname)" = Darwin ] || [ -e /dev/dri ]; then echo "Measuring on the GPU"; else echo "No /dev/dri: verify.sh falls back to software rendering, numbers are advisory"; fi
 only=(); [ -n "${ONLY:-}" ] && only=(--only "$ONLY")
-tools/verify.sh capture-perf --build "$BUILD_GL" --goldens "$OUT/gl" "${only[@]}"
-tools/verify.sh capture-perf --backend vulkan --build "$BUILD_VK" --goldens "$OUT/vk" "${only[@]}"
+tools/verify.sh capture-perf --build "$BUILD_GL" --goldens "$OUT/gl" ${only[@]+"${only[@]}"}
+tools/verify.sh capture-perf --backend vulkan --build "$BUILD_VK" --goldens "$OUT/vk" ${only[@]+"${only[@]}"}
 
 python3 - "$OUT/gl/perf_baseline.json" "$OUT/vk/perf_baseline_vulkan.json" <<'EOF' | tee "$OUT/summary.txt"
 import json, math, sys

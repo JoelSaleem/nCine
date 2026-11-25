@@ -13,6 +13,25 @@ namespace {
 	const char *RequiredDeviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME };
 	const uint32_t NumRequiredDeviceExtensions = sizeof(RequiredDeviceExtensions) / sizeof(RequiredDeviceExtensions[0]);
 
+	/// Portability implementations (MoltenVK on macOS) are only listed when asked for, and need their subset enabled
+	const char *PortabilityEnumerationName = "VK_KHR_portability_enumeration";
+	const char *PortabilitySubsetName = "VK_KHR_portability_subset";
+
+	bool hasInstanceExtension(const char *name)
+	{
+		uint32_t count = 0;
+		vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+		nctl::Array<VkExtensionProperties> extensions(count);
+		extensions.setSize(count);
+		vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+		for (const VkExtensionProperties &extension : extensions)
+		{
+			if (strcmp(extension.extensionName, name) == 0)
+				return true;
+		}
+		return false;
+	}
+
 	bool hasInstanceLayer(const char *name)
 	{
 		uint32_t count = 0;
@@ -643,9 +662,12 @@ bool VkRhiDevice::createInstance(const VkSurfaceProvider &provider)
 	appInfo.pEngineName = "nCine";
 	appInfo.apiVersion = VK_API_VERSION_1_3;
 
-	nctl::Array<const char *> extensions(provider.numInstanceExtensions + 1);
+	nctl::Array<const char *> extensions(provider.numInstanceExtensions + 2);
 	for (uint32_t i = 0; i < provider.numInstanceExtensions; i++)
 		extensions.pushBack(provider.instanceExtensions[i]);
+	const bool portability = hasInstanceExtension(PortabilityEnumerationName);
+	if (portability)
+		extensions.pushBack(PortabilityEnumerationName);
 
 	const bool validation = provider.enableValidation && hasInstanceLayer(ValidationLayerName);
 	if (provider.enableValidation && validation == false)
@@ -660,6 +682,8 @@ bool VkRhiDevice::createInstance(const VkSurfaceProvider &provider)
 	messengerInfo.pUserData = this;
 
 	VkInstanceCreateInfo instanceInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+	if (portability)
+		instanceInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 	instanceInfo.pApplicationInfo = &appInfo;
 	instanceInfo.enabledExtensionCount = extensions.size();
 	instanceInfo.ppEnabledExtensionNames = extensions.data();
@@ -764,8 +788,13 @@ bool VkRhiDevice::createDevice()
 	deviceInfo.pEnabledFeatures = &features;
 	deviceInfo.queueCreateInfoCount = 1;
 	deviceInfo.pQueueCreateInfos = &queueInfo;
-	deviceInfo.enabledExtensionCount = NumRequiredDeviceExtensions;
-	deviceInfo.ppEnabledExtensionNames = RequiredDeviceExtensions;
+	nctl::StaticArray<const char *, NumRequiredDeviceExtensions + 1> deviceExtensions;
+	for (const char *extension : RequiredDeviceExtensions)
+		deviceExtensions.pushBack(extension);
+	if (hasDeviceExtension(physicalDevice_, PortabilitySubsetName))
+		deviceExtensions.pushBack(PortabilitySubsetName);
+	deviceInfo.enabledExtensionCount = deviceExtensions.size();
+	deviceInfo.ppEnabledExtensionNames = deviceExtensions.data();
 	VK_CHECK(vkCreateDevice(physicalDevice_, &deviceInfo, nullptr, &device_));
 	vkGetDeviceQueue(device_, queueFamily_, 0, &queue_);
 	return true;

@@ -22,7 +22,8 @@ done
 
 # No DRI device = headless: software GL/Vulkan under a virtual X server, perf numbers are only advisory
 RUNNER=()
-if [ ! -e /dev/dri ] && [ -z "${VERIFY_FORCE_GPU:-}" ]; then
+# Linux without a DRI device: software rendering under a virtual X server (macOS always has its GPU)
+if [ "$(uname)" = Linux ] && [ ! -e /dev/dri ] && [ -z "${VERIFY_FORCE_GPU:-}" ]; then
 	export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 	export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
 	export SDL_VIDEO_X11_FORCE_EGL=0 # SDL2 otherwise picks EGL on Xvfb and GLX-built GLEW fails to init
@@ -30,6 +31,10 @@ if [ ! -e /dev/dri ] && [ -z "${VERIFY_FORCE_GPU:-}" ]; then
 	ADVISORY=--advisory
 fi
 export ALSOFT_DRIVERS="${ALSOFT_DRIVERS:-null}" # audio never affects pixels; don't depend on a sound card
+# macOS has no `timeout` unless coreutils provides `gtimeout`; empty arrays are expanded with `${a[@]+...}` for bash 3.2
+TIMEOUT=()
+if command -v timeout >/dev/null; then TIMEOUT=(timeout "$RUN_TIMEOUT"); elif command -v gtimeout >/dev/null; then TIMEOUT=(gtimeout "$RUN_TIMEOUT"); fi
+RUN=(${TIMEOUT[@]+"${TIMEOUT[@]}"} ${RUNNER[@]+"${RUNNER[@]}"})
 
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
@@ -66,7 +71,7 @@ nondeterministic() { grep -qx "$1" "$GOLDENS/nondeterministic.txt" 2>/dev/null; 
 # capture <apptest> <frame> <out.png>: succeeds only if a non-empty PNG was written
 capture() {
 	rm -f "$3"
-	NCINE_CAPTURE="$3" NCINE_CAPTURE_FRAME="$2" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/$1" >"$TMPD/$1.log" 2>&1 || true
+	NCINE_CAPTURE="$3" NCINE_CAPTURE_FRAME="$2" ${RUN[@]+"${RUN[@]}"} "$BUILD/tests/$1" >"$TMPD/$1.log" 2>&1 || true
 	if [ -s "$3" ]; then return 0; fi
 	echo "  capture failed for $1, last log lines:"; tail -3 "$TMPD/$1.log" | sed 's/^/    /'
 	return 1
@@ -74,9 +79,9 @@ capture() {
 
 seconds_to_frame() { # <apptest> <frame>
 	local start end
-	start=$(date +%s.%N)
+	start=$("$PY" -c 'import time; print(time.time())') # BSD date has no %N
 	capture "$1" "$2" "$TMPD/perf.png" >/dev/null || return 1
-	end=$(date +%s.%N)
+	end=$("$PY" -c 'import time; print(time.time())')
 	awk -v s="$start" -v e="$end" 'BEGIN { print e - s }'
 }
 
@@ -141,8 +146,8 @@ case "$cmd" in
 		"$PY" tools/perf_check.py "$PERF_BASELINE" "$TMPD/perf_sample.json" --pct "$PCT" ${ADVISORY};;
 	compare-backends)
 		# Same binary, both backends: compatible shader reflection and identical texture readback
-		NCINE_DUMP_REFLECTION="$TMPD/gl.txt" NCINE_CAPTURE="$TMPD/gl.png" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/apptest_clear" >"$TMPD/gl.log" 2>&1 || true
-		NCINE_GFX_BACKEND=vulkan NCINE_VK_VALIDATION=1 NCINE_DUMP_REFLECTION="$TMPD/vk.txt" NCINE_CAPTURE="$TMPD/vk.png" timeout "$RUN_TIMEOUT" "${RUNNER[@]}" "$BUILD/tests/apptest_clear" >"$TMPD/vk.log" 2>&1 || true
+		NCINE_DUMP_REFLECTION="$TMPD/gl.txt" NCINE_CAPTURE="$TMPD/gl.png" ${RUN[@]+"${RUN[@]}"} "$BUILD/tests/apptest_clear" >"$TMPD/gl.log" 2>&1 || true
+		NCINE_GFX_BACKEND=vulkan NCINE_VK_VALIDATION=1 NCINE_DUMP_REFLECTION="$TMPD/vk.txt" NCINE_CAPTURE="$TMPD/vk.png" ${RUN[@]+"${RUN[@]}"} "$BUILD/tests/apptest_clear" >"$TMPD/vk.log" 2>&1 || true
 		rc=0
 		"$PY" tools/compare_reflection.py "$TMPD/gl.txt" "$TMPD/vk.txt" || rc=1
 		glSum=$(grep -m1 "texture checksum" "$TMPD/gl.log" || echo "missing"); vkSum=$(grep -m1 "texture checksum" "$TMPD/vk.log" || echo "missing")
@@ -152,7 +157,7 @@ case "$cmd" in
 		exit $rc;;
 	vk-smoke)
 		# Vulkan backend smoke test: swapchain clear + readback, fails on any validation message
-		"${RUNNER[@]}" "$BUILD/tests/vktest_smoke" ${ONLY:+"$ONLY"};;
+		${RUNNER[@]+"${RUNNER[@]}"} "$BUILD/tests/vktest_smoke" ${ONLY:+"$ONLY"};;
 	*)
 		echo "usage: verify.sh {list|capture-goldens|capture-perf|check|all|check-perf|all-perf|vk-smoke|compare-backends} [--backend gl|gl-rhi|vulkan] [--build DIR] [--only a,b,c] [--goldens DIR]"
 		exit 2;;
