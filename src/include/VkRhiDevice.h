@@ -370,6 +370,14 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	VmaAllocation depthAllocation_ = nullptr;
 	VkImageView depthView_ = VK_NULL_HANDLE;
 	VkImageLayout depthLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	// Offscreen (no-present) render path, opt-in via NCINE_VK_OFFSCREEN — isolates render cost from nextDrawable present-pacing
+	bool offscreenEnabled_ = false;
+	VkImage offscreenImage_ = VK_NULL_HANDLE;
+	VmaAllocation offscreenAllocation_ = nullptr;
+	VkImageView offscreenView_ = VK_NULL_HANDLE;
+	VkImageLayout offscreenLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+
 	int requestedWidth_ = 0;
 	int requestedHeight_ = 0;
 	bool vsync_ = true;

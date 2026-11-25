@@ -190,12 +190,18 @@ void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 	numPassColors_ = 1;
 	passDepthFormat_ = device_.depthFormat_;
 
-	VkRhiDevice::SwapchainImage &image = device_.swapchainImages_[device_.imageIndex_];
+	const bool offscreen = device_.offscreenEnabled_;
+	const VkImage colorImage = offscreen ? device_.offscreenImage_ : device_.swapchainImages_[device_.imageIndex_].image;
+	const VkImageView colorView = offscreen ? device_.offscreenView_ : device_.swapchainImages_[device_.imageIndex_].view;
+	const VkImageLayout oldColorLayout = offscreen ? device_.offscreenLayout_ : device_.swapchainImages_[device_.imageIndex_].layout;
 
 	// Clearing discards the old contents, so the transition can start from an undefined layout
-	device_.transitionImage(image.image, VK_IMAGE_ASPECT_COLOR_BIT, clearColor ? VK_IMAGE_LAYOUT_UNDEFINED : image.layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	device_.transitionImage(colorImage, VK_IMAGE_ASPECT_COLOR_BIT, clearColor ? VK_IMAGE_LAYOUT_UNDEFINED : oldColorLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-	image.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	if (offscreen)
+		device_.offscreenLayout_ = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	else
+		device_.swapchainImages_[device_.imageIndex_].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	const VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil(device_.depthFormat_) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
 	const VkPipelineStageFlags2 depthStages = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
@@ -205,7 +211,7 @@ void VkRhiCommandList::beginRenderPass(const igfx::RenderPassDesc &desc)
 	device_.depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-	colorAttachment.imageView = image.view;
+	colorAttachment.imageView = colorView;
 	colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	colorAttachment.loadOp = clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -610,6 +616,7 @@ bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 	requestedWidth_ = provider.width;
 	vsync_ = provider.vsync;
 	requestedHeight_ = provider.height;
+	offscreenEnabled_ = (std::getenv("NCINE_VK_OFFSCREEN") != nullptr);
 
 	if (createInstance(provider) == false)
 		return false;
@@ -971,6 +978,30 @@ bool VkRhiDevice::createSwapchain()
 	depthViewInfo.format = depthFormat_;
 	depthViewInfo.subresourceRange = { static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT | (hasStencil(depthFormat_) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0)), 0, 1, 0, 1 };
 	VK_CHECK(vkCreateImageView(device_, &depthViewInfo, nullptr, &depthView_));
+
+	if (offscreenEnabled_)
+	{
+		// A non-presentable color target: rendering here never touches a CAMetalLayer drawable, so no nextDrawable wait
+		VkImageCreateInfo offscreenInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+		offscreenInfo.imageType = VK_IMAGE_TYPE_2D;
+		offscreenInfo.format = swapchainFormat_;
+		offscreenInfo.extent = { swapchainExtent_.width, swapchainExtent_.height, 1 };
+		offscreenInfo.mipLevels = 1;
+		offscreenInfo.arrayLayers = 1;
+		offscreenInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		offscreenInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		offscreenInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		VmaAllocationCreateInfo offscreenAllocationInfo = {};
+		offscreenAllocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		VK_CHECK(vmaCreateImage(allocator_, &offscreenInfo, &offscreenAllocationInfo, &offscreenImage_, &offscreenAllocation_, nullptr));
+		offscreenLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+		VkImageViewCreateInfo offscreenViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		offscreenViewInfo.image = offscreenImage_;
+		offscreenViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		offscreenViewInfo.format = swapchainFormat_;
+		offscreenViewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+		VK_CHECK(vkCreateImageView(device_, &offscreenViewInfo, nullptr, &offscreenView_));
+	}
 	return true;
 }
 
@@ -982,6 +1013,12 @@ void VkRhiDevice::destroySwapchain()
 		vmaDestroyImage(allocator_, depthImage_, depthAllocation_);
 	depthView_ = VK_NULL_HANDLE;
 	depthImage_ = VK_NULL_HANDLE;
+	if (offscreenView_ != VK_NULL_HANDLE)
+		vkDestroyImageView(device_, offscreenView_, nullptr);
+	if (offscreenImage_ != VK_NULL_HANDLE)
+		vmaDestroyImage(allocator_, offscreenImage_, offscreenAllocation_);
+	offscreenView_ = VK_NULL_HANDLE;
+	offscreenImage_ = VK_NULL_HANDLE;
 	for (SwapchainImage &image : swapchainImages_)
 	{
 		vkDestroySemaphore(device_, image.renderFinished, nullptr);
@@ -1071,15 +1108,23 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 	collectGarbage(frameIndex_);
 	garbageSlot_ = frameIndex_;
 
-	VkResult result = VK_ERROR_OUT_OF_DATE_KHR;
-	if (swapchain_ != VK_NULL_HANDLE || recreateSwapchain())
-		result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR && swapchain_ != VK_NULL_HANDLE && recreateSwapchain())
-		result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
-	frameSkipped_ = (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
-	if (frameSkipped_ && result != VK_ERROR_OUT_OF_DATE_KHR)
-		LOGE_X("vkAcquireNextImageKHR() failed with VkResult %d", result);
-	imageAvailablePending_ = (frameSkipped_ == false); // a failed acquire signals nothing
+	if (offscreenEnabled_)
+	{
+		frameSkipped_ = false;
+		imageAvailablePending_ = false; // no swapchain image acquired, so nothing to wait on
+	}
+	else
+	{
+		VkResult result = VK_ERROR_OUT_OF_DATE_KHR;
+		if (swapchain_ != VK_NULL_HANDLE || recreateSwapchain())
+			result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
+		if (result == VK_ERROR_OUT_OF_DATE_KHR && swapchain_ != VK_NULL_HANDLE && recreateSwapchain())
+			result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE, &imageIndex_);
+		frameSkipped_ = (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
+		if (frameSkipped_ && result != VK_ERROR_OUT_OF_DATE_KHR)
+			LOGE_X("vkAcquireNextImageKHR() failed with VkResult %d", result);
+		imageAvailablePending_ = (frameSkipped_ == false); // a failed acquire signals nothing
+	}
 	frameUniformsOffset_ = 0; // this frame's transient uniforms are free again, its fence has been waited
 
 	vkResetFences(device_, 1, &frame.fence);
@@ -1105,6 +1150,17 @@ void VkRhiDevice::endFrame()
 	{
 		vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampPool_, 2 * frameIndex_ + 1);
 		timestampSlotWritten_[frameIndex_] = true;
+	}
+	if (offscreenEnabled_)
+	{
+		// No swapchain image to transition or present; submit so the frame fence still paces CPU vs GPU
+		vkEndCommandBuffer(frame.commandBuffer);
+		VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &frame.commandBuffer;
+		vkQueueSubmit(queue_, 1, &submitInfo, frame.fence);
+		frameIndex_ = (frameIndex_ + 1) % FramesInFlight;
+		return;
 	}
 	if (frameSkipped_)
 	{
@@ -1203,14 +1259,18 @@ bool VkRhiDevice::readbackFrame(uint8_t *rgbPixels, int width, int height)
 			return false;
 	}
 
-	SwapchainImage &image = swapchainImages_[imageIndex_];
-	transitionImage(image.image, VK_IMAGE_ASPECT_COLOR_BIT, image.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	const VkImage srcImage = offscreenEnabled_ ? offscreenImage_ : swapchainImages_[imageIndex_].image;
+	const VkImageLayout srcLayout = offscreenEnabled_ ? offscreenLayout_ : swapchainImages_[imageIndex_].layout;
+	transitionImage(srcImage, VK_IMAGE_ASPECT_COLOR_BIT, srcLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 	                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
 	VkBufferImageCopy region = {};
 	region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 	region.imageExtent = { swapchainExtent_.width, swapchainExtent_.height, 1 };
-	vkCmdCopyImageToBuffer(commandList_.commandBuffer_, image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readbackBuffer_->handle(), 1, &region);
-	image.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	vkCmdCopyImageToBuffer(commandList_.commandBuffer_, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readbackBuffer_->handle(), 1, &region);
+	if (offscreenEnabled_)
+		offscreenLayout_ = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	else
+		swapchainImages_[imageIndex_].layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	submitAndWait();
 	readbackBuffer_->invalidate(0, bufferSize);
 
