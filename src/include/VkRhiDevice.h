@@ -274,6 +274,8 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	/// Warnings and errors reported by the validation layer so far
 	inline unsigned int validationMessageCount() const { return validationMessageCount_; }
 	inline VkExtent2D swapchainExtent() const { return swapchainExtent_; }
+	/// Average GPU execution time per frame (ms), updated when NCINE_VK_GPU_TIMING is set; 0 otherwise
+	double gpuFrameTimeMs() const override { return gpuFrameTimeMs_; }
 
 	igfx::Backend backend() const override { return igfx::Backend::VULKAN; }
 	const igfx::Limits &limits() const override { return limits_; }
@@ -340,6 +342,15 @@ class DLL_PUBLIC VkRhiDevice : public igfx::IDevice
 	bool isValid_ = false;
 	unsigned int validationMessageCount_ = 0;
 	igfx::Limits limits_;
+
+	// GPU frame-time timing, opt-in via NCINE_VK_GPU_TIMING (two timestamps per frame-in-flight slot)
+	VkQueryPool timestampPool_ = VK_NULL_HANDLE;
+	double timestampPeriodNs_ = 0.0;
+	double gpuTimeAccumMs_ = 0.0;
+	double gpuFrameTimeMs_ = 0.0;
+	unsigned int gpuTimeFrames_ = 0;
+	bool gpuTimingEnabled_ = false;
+	bool timestampSlotWritten_[FramesInFlight] = {};
 
 	VkInstance instance_ = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;

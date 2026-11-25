@@ -2259,6 +2259,9 @@ void ImGuiDebugOverlay::guiTopRight()
 		ImGui::Begin("###Top-Right", nullptr, windowFlags);
 
 		ImGui::Text("FPS: %.0f (%.2f ms)", 1.0f / theApplication().frameTime(), theApplication().frameTime() * 1000.0f);
+		const double gpuFrameMs = RenderResources::rhiDevice().gpuFrameTimeMs();
+		if (gpuFrameMs > 0.0)
+			ImGui::Text("GPU frame time: %.3f ms", gpuFrameMs);
 		ImGui::Text("Num Frames: %lu", theApplication().numFrames());
 
 #ifdef WITH_SCENEGRAPH

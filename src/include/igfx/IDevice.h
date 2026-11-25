@@ -73,6 +73,9 @@ class IDevice
 	virtual Backend backend() const = 0;
 	virtual const Limits &limits() const = 0;
 
+	/// Average GPU execution time per frame (ms) when the backend measures it, 0 otherwise
+	virtual double gpuFrameTimeMs() const { return 0.0; }
+
 	virtual nctl::UniquePtr<IBuffer> createBuffer(const BufferDesc &desc) = 0;
 	virtual nctl::UniquePtr<ITexture> createTexture(const TextureDesc &desc) = 0;
 	virtual nctl::UniquePtr<IShaderProgram> createShaderProgram(const char *vertexSource, const char *fragmentSource, const char *name) = 0;

@@ -1,4 +1,5 @@
 #include <cstring>
+#include <cstdlib>
 #include "VkRhiDevice.h"
 #include "vk_mem_alloc.h"
 #include "common_macros.h"
@@ -567,6 +568,7 @@ VkRhiDevice::~VkRhiDevice()
 			frameUniforms.reset(nullptr);
 		for (unsigned int slot = 0; slot < FramesInFlight; slot++)
 			collectGarbage(slot);
+		vkDestroyQueryPool(device_, timestampPool_, nullptr); // no-op when VK_NULL_HANDLE (timing not enabled)
 		destroySwapchain();
 		vkDestroyFence(device_, transferFence_, nullptr);
 		vkDestroyCommandPool(device_, transferPool_, nullptr);
@@ -676,6 +678,18 @@ bool VkRhiDevice::init(const VkSurfaceProvider &provider)
 	const uint8_t white[4] = { 255, 255, 255, 255 };
 	dummyTexture_->upload(0, white);
 
+	// Opt-in GPU frame timing: two timestamps per frame-in-flight slot, read back one cycle later (after the fence)
+	if (std::getenv("NCINE_VK_GPU_TIMING") != nullptr && timestampPeriodNs_ > 0.0)
+	{
+		VkQueryPoolCreateInfo queryPoolInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+		queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+		queryPoolInfo.queryCount = 2 * FramesInFlight;
+		if (vkCreateQueryPool(device_, &queryPoolInfo, nullptr, &timestampPool_) == VK_SUCCESS)
+			gpuTimingEnabled_ = true;
+		else
+			LOGW("NCINE_VK_GPU_TIMING is set but the timestamp query pool could not be created");
+	}
+
 	return createSwapchain();
 }
 
@@ -765,6 +779,7 @@ bool VkRhiDevice::pickPhysicalDevice()
 				limits_.uniformBufferOffsetAlignment = static_cast<int>(properties.limits.minUniformBufferOffsetAlignment);
 				// MoltenVK reports maxUniformBufferRange as UINT32_MAX; clamp in unsigned space so the int cast can't wrap negative
 				limits_.maxUniformBlockSize = static_cast<int>(nctl::min(properties.limits.maxUniformBufferRange, static_cast<uint32_t>(64 * 1024)));
+				timestampPeriodNs_ = properties.limits.timestampPeriod; // nanoseconds per timestamp tick, for GPU timing
 				LOGI_X("Vulkan device: %s (API %u.%u.%u)", properties.deviceName, VK_API_VERSION_MAJOR(properties.apiVersion),
 				       VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
 				return true;
@@ -1036,6 +1051,22 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 {
 	Frame &frame = frames_[frameIndex_];
 	vkWaitForFences(device_, 1, &frame.fence, VK_TRUE, UINT64_MAX);
+	// GPU timing: the fence above means this slot's previous frame is done, so its two timestamps are ready
+	if (gpuTimingEnabled_ && timestampSlotWritten_[frameIndex_])
+	{
+		uint64_t ts[2] = { 0, 0 };
+		if (vkGetQueryPoolResults(device_, timestampPool_, 2 * frameIndex_, 2, sizeof(ts), ts, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && ts[1] > ts[0])
+		{
+			gpuTimeAccumMs_ += (ts[1] - ts[0]) * timestampPeriodNs_ / 1.0e6;
+			if (++gpuTimeFrames_ >= 120)
+			{
+				gpuFrameTimeMs_ = gpuTimeAccumMs_ / gpuTimeFrames_;
+				LOGI_X("Vulkan GPU frame time: %.3f ms (avg over %u frames)", gpuFrameTimeMs_, gpuTimeFrames_);
+				gpuTimeAccumMs_ = 0.0;
+				gpuTimeFrames_ = 0;
+			}
+		}
+	}
 	// The last frame of this slot is done, and so are the ones before it
 	collectGarbage(frameIndex_);
 	garbageSlot_ = frameIndex_;
@@ -1058,6 +1089,11 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 	vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 	commandList_.commandBuffer_ = frame.commandBuffer;
 	commandList_.hasLastPush_ = false; // fresh command buffer: nothing pushed yet, so the dedup must re-push the first draw
+	if (gpuTimingEnabled_)
+	{
+		vkCmdResetQueryPool(frame.commandBuffer, timestampPool_, 2 * frameIndex_, 2);
+		vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timestampPool_, 2 * frameIndex_);
+	}
 	return commandList_;
 }
 
@@ -1065,6 +1101,11 @@ void VkRhiDevice::endFrame()
 {
 	Frame &frame = frames_[frameIndex_];
 	commandList_.endRenderPass();
+	if (gpuTimingEnabled_)
+	{
+		vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampPool_, 2 * frameIndex_ + 1);
+		timestampSlotWritten_[frameIndex_] = true;
+	}
 	if (frameSkipped_)
 	{
 		// Submitted anyway, the next wait on this frame's fence must return
