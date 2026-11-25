@@ -739,7 +739,8 @@ bool VkRhiDevice::pickPhysicalDevice()
 				queueFamily_ = i;
 				limits_.maxTextureSize = static_cast<int>(properties.limits.maxImageDimension2D);
 				limits_.uniformBufferOffsetAlignment = static_cast<int>(properties.limits.minUniformBufferOffsetAlignment);
-				limits_.maxUniformBlockSize = static_cast<int>(properties.limits.maxUniformBufferRange);
+				// MoltenVK reports maxUniformBufferRange as UINT32_MAX; clamp in unsigned space so the int cast can't wrap negative
+				limits_.maxUniformBlockSize = static_cast<int>(nctl::min(properties.limits.maxUniformBufferRange, static_cast<uint32_t>(64 * 1024)));
 				LOGI_X("Vulkan device: %s (API %u.%u.%u)", properties.deviceName, VK_API_VERSION_MAJOR(properties.apiVersion),
 				       VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
 				return true;
