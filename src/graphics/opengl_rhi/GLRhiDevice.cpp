@@ -1,4 +1,5 @@
 #include <nctl/StaticHashMapIterator.h>
+#include <cstdlib>
 #include "GLRhiDevice.h"
 #include "GLBufferObject.h"
 #include "GLTexture.h"
@@ -637,6 +638,51 @@ GLRhiDevice::GLRhiDevice()
 	limits_.uniformBufferOffsetAlignment = gfxCaps.value(IGfxCapabilities::GLIntValues::UNIFORM_BUFFER_OFFSET_ALIGNMENT);
 	limits_.maxUniformBlockSize = gfxCaps.value(IGfxCapabilities::GLIntValues::MAX_UNIFORM_BLOCK_SIZE);
 	limits_.framesInFlight = 1;
+	gpuTimingEnabled_ = (std::getenv("NCINE_GL_GPU_TIMING") != nullptr);
+}
+
+igfx::ICommandList &GLRhiDevice::beginFrame()
+{
+	if (gpuTimingEnabled_)
+	{
+		if (gpuTimeQueries_[0] == 0)
+			glGenQueries(2, gpuTimeQueries_);
+		// Read the other slot's result once ready, so we never stall on the just-submitted frame
+		const int prev = gpuQuerySlot_ ^ 1;
+		if (gpuQueryActive_[prev])
+		{
+			GLint available = 0;
+			glGetQueryObjectiv(gpuTimeQueries_[prev], GL_QUERY_RESULT_AVAILABLE, &available);
+			if (available)
+			{
+				GLuint64 elapsedNs = 0;
+				glGetQueryObjectui64v(gpuTimeQueries_[prev], GL_QUERY_RESULT, &elapsedNs);
+				gpuQueryActive_[prev] = false;
+				gpuTimeAccumMs_ += elapsedNs / 1.0e6;
+				if (++gpuTimeFrames_ >= 120)
+				{
+					gpuFrameTimeMs_ = gpuTimeAccumMs_ / gpuTimeFrames_;
+					LOGI_X("OpenGL GPU frame time: %.3f ms (avg over %u frames)", gpuFrameTimeMs_, gpuTimeFrames_);
+					gpuTimeAccumMs_ = 0.0;
+					gpuTimeFrames_ = 0;
+				}
+			}
+		}
+		glBeginQuery(GL_TIME_ELAPSED, gpuTimeQueries_[gpuQuerySlot_]);
+		gpuQueryBegun_ = true;
+	}
+	return commandList_;
+}
+
+void GLRhiDevice::endFrame()
+{
+	if (gpuTimingEnabled_ && gpuQueryBegun_)
+	{
+		glEndQuery(GL_TIME_ELAPSED);
+		gpuQueryActive_[gpuQuerySlot_] = true;
+		gpuQuerySlot_ ^= 1;
+		gpuQueryBegun_ = false;
+	}
 }
 
 nctl::UniquePtr<igfx::IBuffer> GLRhiDevice::createBuffer(const igfx::BufferDesc &desc)

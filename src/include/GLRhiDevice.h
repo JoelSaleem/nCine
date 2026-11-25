@@ -76,16 +76,28 @@ class GLRhiDevice : public igfx::IDevice
 	nctl::UniquePtr<igfx::IPipeline> createPipeline(const igfx::PipelineDesc &desc) override;
 
 	/// The window back buffer is the swapchain and presenting stays with the windowing backend
-	igfx::ICommandList &beginFrame() override { return commandList_; }
-	void endFrame() override {}
+	igfx::ICommandList &beginFrame() override;
+	void endFrame() override;
 	unsigned int frameIndex() const override { return 0; }
 	void resize(int, int) override {}
+	/// Average GPU execution time per frame (ms), updated when NCINE_GL_GPU_TIMING is set; 0 otherwise
+	double gpuFrameTimeMs() const override { return gpuFrameTimeMs_; }
 
 	bool readbackFrame(uint8_t *rgbPixels, int width, int height) override;
 
   private:
 	igfx::Limits limits_;
 	GLRhiCommandList commandList_;
+
+	// GPU frame-time timing, opt-in via NCINE_GL_GPU_TIMING (two rotating GL_TIME_ELAPSED queries, read when available)
+	unsigned int gpuTimeQueries_[2] = { 0, 0 };
+	bool gpuQueryActive_[2] = {};
+	int gpuQuerySlot_ = 0;
+	bool gpuQueryBegun_ = false;
+	bool gpuTimingEnabled_ = false;
+	double gpuTimeAccumMs_ = 0.0;
+	double gpuFrameTimeMs_ = 0.0;
+	unsigned int gpuTimeFrames_ = 0;
 };
 
 }
