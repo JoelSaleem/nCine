@@ -433,6 +433,30 @@ void VkRhiCommandList::setLooseUniforms(const void *data, uint32_t writeMask)
 
 void VkRhiCommandList::pushDescriptors()
 {
+	// Fingerprint everything that would be pushed (pipeline, loose uniform bytes, block bindings, textures) and skip the
+	// whole path when it matches the previous draw's push: MoltenVK's vkCmdPushDescriptorSet is ~5ms/call. The recorded
+	// push and its transient uniform region stay bound for the identical draws that follow; hasLastPush_ resets each frame.
+	uint64_t hash = 1469598103934665603ULL; // FNV-1a 64-bit offset basis
+	const auto mix = [&hash](const void *data, size_t len) {
+		const uint8_t *bytes = static_cast<const uint8_t *>(data);
+		for (size_t i = 0; i < len; i++)
+		{
+			hash ^= bytes[i];
+			hash *= 1099511628211ULL;
+		}
+	};
+	const VkRhiPipeline *pipelinePtr = pipeline_;
+	mix(&pipelinePtr, sizeof(pipelinePtr));
+	const uint8_t *looseStorageForHash = pipeline_->program_->looseUniformsStorage();
+	if (pipeline_->looseBinding_ >= 0 && looseStorageForHash != nullptr)
+		mix(looseStorageForHash, static_cast<size_t>(pipeline_->program_->looseBlockSize()));
+	mix(uniformBuffers_, sizeof(uniformBuffers_));
+	mix(textures_, sizeof(textures_));
+	if (hasLastPush_ && hash == lastPushHash_)
+		return;
+	lastPushHash_ = hash;
+	hasLastPush_ = true;
+
 	VkWriteDescriptorSet writes[VkRhiPipeline::MaxBindings];
 	VkDescriptorBufferInfo bufferInfos[VkRhiPipeline::MaxBindings];
 	VkDescriptorImageInfo imageInfos[VkRhiPipeline::MaxBindings];
@@ -1033,6 +1057,7 @@ igfx::ICommandList &VkRhiDevice::beginFrame()
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 	commandList_.commandBuffer_ = frame.commandBuffer;
+	commandList_.hasLastPush_ = false; // fresh command buffer: nothing pushed yet, so the dedup must re-push the first draw
 	return commandList_;
 }
 

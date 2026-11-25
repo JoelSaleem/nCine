@@ -250,6 +250,10 @@ class VkRhiCommandList : public igfx::ICommandList
 	UniformBufferBinding uniformBuffers_[VkRhiPipeline::MaxBindings];
 	const VkRhiTexture *textures_[MaxTextureUnits] = {};
 
+	// Skip re-pushing identical descriptor state between consecutive draws: vkCmdPushDescriptorSet is ~5ms/call on MoltenVK
+	bool hasLastPush_ = false;
+	uint64_t lastPushHash_ = 0;
+
 	/// Pushes the descriptors of the bound pipeline: loose uniforms, uniform blocks and textures
 	void pushDescriptors();
 	void beginTexturePass(const igfx::RenderPassDesc &desc, bool clearColor, bool clearDepth);
