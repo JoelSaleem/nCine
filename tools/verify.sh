@@ -10,9 +10,11 @@ MAXFRAC="${GOLDEN_MAX_FRAC:-0.0001}" # 0.01%: a 0.5% budget let a missing small 
 PCT="${PERF_THRESHOLD_PCT:-10}"
 RUN_TIMEOUT="${RUN_TIMEOUT:-60}"
 ADVISORY="${PERF_ADVISORY:-}"
-# Perf frame_ms_avg = (time to frame PERF_HI - time to frame PERF_LO) / (PERF_HI - PERF_LO), so startup cancels out
-PERF_LO=30
-PERF_HI=330
+# Perf frame_ms_avg = (time to frame PERF_HI - time to frame PERF_LO) / (PERF_HI - PERF_LO), so startup cancels out.
+# Overridable: on a fast GPU (real hardware) 300 frames render in less than the per-run startup variance, so the
+# delta is noise; raise PERF_HI until the render time dominates startup (e.g. PERF_HI=3330 on an M1).
+PERF_LO="${PERF_LO:-30}"
+PERF_HI="${PERF_HI:-330}"
 
 PY=""
 for p in python3 /usr/bin/python3; do
